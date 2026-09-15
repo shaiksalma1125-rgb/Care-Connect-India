@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Appointment, User, LanguageCode } from '../../types';
 import { apiStore } from '../../services/apiStore';
 import { translations } from '../../utils/translations';
-import { subscribeToUserAppointments } from '../../services/firebase';
+import { subscribeToUserAppointments, updateAppointmentStatusInFirestore } from '../../services/firebase';
 import {
   Calendar,
   Clock,
@@ -15,7 +15,8 @@ import {
   Database,
   Mail,
   Lock,
-  LogIn
+  LogIn,
+  RotateCw
 } from 'lucide-react';
 
 interface MyAppointmentsViewProps {
@@ -23,18 +24,30 @@ interface MyAppointmentsViewProps {
   onNavigate: (view: string, payload?: any) => void;
   language: LanguageCode;
   onUserAuth?: (user: User) => void;
+  refreshKey?: number;
+  onRefresh?: () => void;
 }
 
 export const MyAppointmentsView: React.FC<MyAppointmentsViewProps> = ({
   currentUser,
   onNavigate,
   language,
-  onUserAuth
+  onUserAuth,
+  refreshKey: propRefreshKey,
+  onRefresh
 }) => {
   const t = translations[language];
   const [filter, setFilter] = useState<'ALL' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED'>('ALL');
   const [refreshKey, setRefreshKey] = useState(0);
   const [firestoreAppointments, setFirestoreAppointments] = useState<Appointment[]>([]);
+  const [confirmCancelId, setConfirmCancelId] = useState<string | null>(null);
+  const [cancelNotice, setCancelNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (propRefreshKey !== undefined) {
+      setRefreshKey((k) => k + 1);
+    }
+  }, [propRefreshKey]);
 
   // Manual citizen sign in state
   const [citizenEmail, setCitizenEmail] = useState('');
@@ -76,6 +89,19 @@ export const MyAppointmentsView: React.FC<MyAppointmentsViewProps> = ({
     return () => unsubscribe();
   }, [currentUser?.id]);
 
+  // Realtime appointments event listener
+  useEffect(() => {
+    const handleAppointmentsChange = () => {
+      setRefreshKey((k) => k + 1);
+    };
+    window.addEventListener('healthcare-appointments-updated', handleAppointmentsChange);
+    window.addEventListener('storage', handleAppointmentsChange);
+    return () => {
+      window.removeEventListener('healthcare-appointments-updated', handleAppointmentsChange);
+      window.removeEventListener('storage', handleAppointmentsChange);
+    };
+  }, []);
+
   const appointments = useMemo(() => {
     // If logged in citizen, return their appointments; otherwise return demo appointments
     const userId = currentUser ? currentUser.id : undefined;
@@ -84,7 +110,20 @@ export const MyAppointmentsView: React.FC<MyAppointmentsViewProps> = ({
     // Merge firestore and local, deduping by id / appointmentId
     const map = new Map<string, Appointment>();
     local.forEach((a) => map.set(a.id || a.appointmentId, a));
-    firestoreAppointments.forEach((a) => map.set(a.id || a.appointmentId, a));
+    firestoreAppointments.forEach((cloudApt) => {
+      const key = cloudApt.id || cloudApt.appointmentId;
+      const existing = map.get(key);
+      if (existing) {
+        // If either copy was cancelled, preserve CANCELLED status
+        if (existing.status === 'CANCELLED' || cloudApt.status === 'CANCELLED') {
+          map.set(key, { ...cloudApt, ...existing, status: 'CANCELLED' });
+        } else {
+          map.set(key, cloudApt);
+        }
+      } else {
+        map.set(key, cloudApt);
+      }
+    });
 
     return Array.from(map.values()).sort(
       (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
@@ -99,11 +138,34 @@ export const MyAppointmentsView: React.FC<MyAppointmentsViewProps> = ({
     return appointments.filter((a) => a.status === filter);
   }, [appointments, filter]);
 
-  const handleCancel = (aptId: string) => {
-    if (window.confirm('Are you sure you want to cancel this public healthcare appointment?')) {
-      apiStore.updateAppointmentStatus(aptId, 'CANCELLED');
-      setRefreshKey((k) => k + 1);
+  const handleExecuteCancel = (aptId: string, appointmentId?: string) => {
+    const targetApt = appointments.find((a) => a.id === aptId || a.appointmentId === appointmentId);
+
+    // Update local storage and dispatch real-time slot update
+    apiStore.updateAppointmentStatus(aptId, 'CANCELLED');
+    if (appointmentId && appointmentId !== aptId) {
+      apiStore.updateAppointmentStatus(appointmentId, 'CANCELLED');
     }
+
+    // Also update in Firestore if connected
+    updateAppointmentStatusInFirestore(aptId, 'CANCELLED').catch(() => {});
+    if (appointmentId && appointmentId !== aptId) {
+      updateAppointmentStatusInFirestore(appointmentId, 'CANCELLED').catch(() => {});
+    }
+
+    // Also update any firestore cached list
+    setFirestoreAppointments((prev) =>
+      prev.map((a) =>
+        a.id === aptId || a.appointmentId === appointmentId || a.appointmentId === aptId
+          ? { ...a, status: 'CANCELLED' }
+          : a
+      )
+    );
+    setConfirmCancelId(null);
+    const slotText = targetApt?.appointmentTime ? ` for ${targetApt.appointmentTime}` : '';
+    setCancelNotice(`Appointment${slotText} cancelled successfully. The doctor consultation slot has been restored (+1 slot).`);
+    setTimeout(() => setCancelNotice(null), 5000);
+    setRefreshKey((k) => k + 1);
   };
 
   return (
@@ -123,15 +185,43 @@ export const MyAppointmentsView: React.FC<MyAppointmentsViewProps> = ({
           </p>
         </div>
 
-        <button
-          id="book-new-appointment-btn"
-          onClick={() => onNavigate('appointment')}
-          className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-xs transition-colors flex items-center gap-2 self-start sm:self-auto"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Book New Appointment</span>
-        </button>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <button
+            id="refresh-my-appointments-btn"
+            type="button"
+            onClick={() => {
+              if (onRefresh) onRefresh();
+              setRefreshKey((k) => k + 1);
+            }}
+            className="px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+            title="Refresh appointments and token passes"
+          >
+            <RotateCw className="w-3.5 h-3.5 text-blue-600" />
+            <span>Refresh</span>
+          </button>
+          <button
+            id="book-new-appointment-btn"
+            onClick={() => onNavigate('appointment')}
+            className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-xs transition-colors flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Book New Appointment</span>
+          </button>
+        </div>
       </div>
+
+      {cancelNotice && (
+        <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-between text-xs font-semibold text-emerald-900 shadow-xs">
+          <span>✓ {cancelNotice}</span>
+          <button
+            type="button"
+            onClick={() => setCancelNotice(null)}
+            className="text-emerald-700 hover:text-emerald-950 font-bold px-2 py-1"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Filter Tabs */}
       <div className="flex gap-2 text-xs font-bold">
@@ -250,13 +340,34 @@ export const MyAppointmentsView: React.FC<MyAppointmentsViewProps> = ({
                     )}
 
                     {(isBooked || isConfirmed) && (
-                      <button
-                        id={`cancel-apt-${apt.id}`}
-                        onClick={() => handleCancel(apt.id)}
-                        className="px-3 py-1.5 rounded-xl border border-rose-200 hover:bg-rose-50 text-rose-700 font-semibold text-xs transition-colors"
-                      >
-                        Cancel Appointment
-                      </button>
+                      confirmCancelId === apt.id ? (
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            id={`confirm-cancel-${apt.id}`}
+                            type="button"
+                            onClick={() => handleExecuteCancel(apt.id, apt.appointmentId)}
+                            className="px-2.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-xs transition-colors"
+                          >
+                            Confirm Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmCancelId(null)}
+                            className="px-2.5 py-1.5 rounded-xl border border-slate-300 hover:bg-slate-100 text-slate-700 font-semibold text-xs transition-colors"
+                          >
+                            Keep
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          id={`cancel-apt-${apt.id}`}
+                          type="button"
+                          onClick={() => setConfirmCancelId(apt.id)}
+                          className="px-3 py-1.5 rounded-xl border border-rose-200 hover:bg-rose-50 text-rose-700 font-semibold text-xs transition-colors cursor-pointer"
+                        >
+                          Cancel Appointment
+                        </button>
+                      )
                     )}
                   </div>
                 </div>

@@ -14,6 +14,7 @@ import {
   getFirestore,
   doc,
   setDoc,
+  updateDoc,
   getDoc,
   getDocFromServer,
   collection,
@@ -285,6 +286,24 @@ export async function saveAppointmentToFirestore(appointment: Appointment): Prom
   } catch (err) {
     console.warn('Could not write appointment to Firestore directly:', err);
     // Do not throw so appointment completes locally even if network/rules restrict
+  }
+}
+
+/**
+ * Update an Appointment status in Firestore
+ */
+export async function updateAppointmentStatusInFirestore(
+  appointmentId: string,
+  status: Appointment['status']
+): Promise<void> {
+  try {
+    const aptRef = doc(db, 'appointments', appointmentId);
+    await updateDoc(aptRef, {
+      status,
+      updatedAt: new Date().toISOString()
+    });
+  } catch (err) {
+    console.warn('Could not update appointment status in Firestore directly:', err);
   }
 }
 

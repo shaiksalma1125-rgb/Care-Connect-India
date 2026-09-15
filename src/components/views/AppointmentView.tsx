@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Hospital, Doctor, Appointment, User, LanguageCode, UserRole } from '../../types';
 import { apiStore } from '../../services/apiStore';
 import { translations } from '../../utils/translations';
@@ -54,7 +54,7 @@ export const AppointmentView: React.FC<AppointmentViewProps> = ({
   language
 }) => {
   const t = translations[language];
-  const hospitals = apiStore.getHospitals();
+  const hospitals = React.useMemo(() => apiStore.getHospitals(), []);
 
   // Active appointment form states
   const [selectedHospitalId, setSelectedHospitalId] = useState<string>(
@@ -63,7 +63,10 @@ export const AppointmentView: React.FC<AppointmentViewProps> = ({
 
   const [selectedSpecialty, setSelectedSpecialty] = useState<string>('All');
 
-  const allHospDoctors = apiStore.getDoctors(selectedHospitalId);
+  const allHospDoctors = React.useMemo(() => {
+    return apiStore.getDoctors(selectedHospitalId);
+  }, [selectedHospitalId]);
+
   const hospitalSpecialties = React.useMemo(() => {
     const set = new Set<string>();
     allHospDoctors.forEach((d) => set.add(d.specialization));
@@ -97,6 +100,43 @@ export const AppointmentView: React.FC<AppointmentViewProps> = ({
   const [appointmentTime, setAppointmentTime] = useState<string>(
     prefillSlot || (selectedDoctor?.timeSlots[0] || '09:00 AM - 10:00 AM')
   );
+
+  // Real-time slot update trigger
+  const [appointmentVersion, setAppointmentVersion] = useState(0);
+
+  useEffect(() => {
+    const handleAppointmentsChange = () => {
+      setAppointmentVersion((v) => v + 1);
+    };
+    window.addEventListener('healthcare-appointments-updated', handleAppointmentsChange);
+    window.addEventListener('storage', handleAppointmentsChange);
+    return () => {
+      window.removeEventListener('healthcare-appointments-updated', handleAppointmentsChange);
+      window.removeEventListener('storage', handleAppointmentsChange);
+    };
+  }, []);
+
+  // Dynamic slot calculations based on doctor working hours and consultation duration
+  const availableSlotsWithCapacity = useMemo(() => {
+    if (!selectedDoctor) return [];
+    return apiStore.getDoctorSlotsWithAvailability(selectedDoctor, appointmentDate);
+  }, [selectedDoctor?.id, appointmentDate, selectedDoctor, appointmentVersion]);
+
+  // When doctor, date, or appointments change: automatically select the next available time slot
+  // if current slot is missing or fully booked
+  useEffect(() => {
+    if (availableSlotsWithCapacity.length === 0) return;
+    const current = availableSlotsWithCapacity.find((s) => s.slot === appointmentTime);
+    if (!current || current.isFullyBooked) {
+      const nextAvail = availableSlotsWithCapacity.find((s) => !s.isFullyBooked);
+      if (nextAvail) {
+        setAppointmentTime(nextAvail.slot);
+      } else if (availableSlotsWithCapacity[0]) {
+        setAppointmentTime(availableSlotsWithCapacity[0].slot);
+      }
+    }
+  }, [availableSlotsWithCapacity, appointmentTime]);
+
   const [reason, setReason] = useState<string>('Routine health consultation and medical checkup');
 
   const [confirmedAppointment, setConfirmedAppointment] = useState<Appointment | null>(null);
@@ -118,32 +158,37 @@ export const AppointmentView: React.FC<AppointmentViewProps> = ({
   // When currentUser updates, sync patient details
   useEffect(() => {
     if (currentUser) {
-      if (!patientName) setPatientName(currentUser.name);
-      if (currentUser.mobile && (!patientPhone || patientPhone === '9849112501')) {
-        setPatientPhone(currentUser.mobile);
+      setPatientName((prev) => prev || currentUser.name);
+      if (currentUser.mobile) {
+        setPatientPhone((prev) => (!prev || prev === '9849112501' ? currentUser.mobile : prev));
       }
     }
-  }, [currentUser]);
+  }, [currentUser?.id, currentUser?.name, currentUser?.mobile]);
 
   // When hospital changes, update selected doctor
   useEffect(() => {
     const docs = apiStore.getDoctors(selectedHospitalId);
-    if (docs.length > 0 && (!selectedDoctorId || !docs.some((d) => d.id === selectedDoctorId))) {
-      setSelectedDoctorId(docs[0].id);
-      if (docs[0].timeSlots.length > 0) {
-        setAppointmentTime(docs[0].timeSlots[0]);
-      }
+    if (docs.length > 0) {
+      setSelectedDoctorId((prev) => {
+        if (prev && docs.some((d) => d.id === prev)) return prev;
+        return docs[0].id;
+      });
     }
     setSelectedSpecialty('All');
   }, [selectedHospitalId]);
 
-  // When doctor changes, update default time slot
+  // When doctor changes, update default time slot from available slots
   useEffect(() => {
-    const doc = availableDoctors.find((d) => d.id === selectedDoctorId);
-    if (doc && doc.timeSlots.length > 0) {
-      setAppointmentTime(doc.timeSlots[0]);
+    if (!selectedDoctorId) return;
+    const doc = apiStore.getDoctorById(selectedDoctorId);
+    if (doc) {
+      const slots = apiStore.getDoctorSlotsWithAvailability(doc, appointmentDate);
+      const firstAvailable = slots.find((s) => !s.isFullyBooked) || slots[0];
+      if (firstAvailable) {
+        setAppointmentTime(firstAvailable.slot);
+      }
     }
-  }, [selectedDoctorId, availableDoctors]);
+  }, [selectedDoctorId, appointmentDate]);
 
   // Handle inline sign-in
   const handleInlineSignIn = async (e: React.FormEvent) => {
@@ -330,6 +375,7 @@ export const AppointmentView: React.FC<AppointmentViewProps> = ({
       await saveAppointmentToFirestore(apt);
 
       setConfirmedAppointment(apt);
+      setAppointmentVersion((v) => v + 1);
     } catch (err: any) {
       console.error('Error during booking flow:', err);
       setFormError(err?.message || 'An error occurred while booking. Please check availability and try again.');
@@ -437,7 +483,8 @@ export const AppointmentView: React.FC<AppointmentViewProps> = ({
             <button
               onClick={() => {
                 setConfirmedAppointment(null);
-                setReason('');
+                setReason('Routine health consultation and medical checkup');
+                setAppointmentVersion((v) => v + 1);
               }}
               className="w-full sm:w-auto px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-medium text-xs hover:bg-slate-50 transition-colors"
             >
@@ -932,7 +979,14 @@ export const AppointmentView: React.FC<AppointmentViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Available OPD Slot *</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-semibold text-slate-700">Available OPD Slot *</label>
+                    {selectedDoctor && (
+                      <span className="text-[10px] text-slate-500 font-medium">
+                        9:00 AM - 4:00 PM (6 min/pt)
+                      </span>
+                    )}
+                  </div>
                   <div className="relative">
                     <Clock className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
                     <select
@@ -941,13 +995,36 @@ export const AppointmentView: React.FC<AppointmentViewProps> = ({
                       onChange={(e) => setAppointmentTime(e.target.value)}
                       className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-800 bg-white focus:outline-hidden focus:ring-2 focus:ring-blue-500 shadow-xs"
                     >
-                      {selectedDoctor?.timeSlots.map((slot) => (
-                        <option key={slot} value={slot}>
-                          {slot}
+                      {availableSlotsWithCapacity.map((item) => (
+                        <option key={item.slot} value={item.slot} disabled={item.isFullyBooked}>
+                          {item.slot} — {item.label}
                         </option>
                       ))}
                     </select>
                   </div>
+                  {/* Real-time slot status indicator */}
+                  {(() => {
+                    const currentSlot = availableSlotsWithCapacity.find((s) => s.slot === appointmentTime);
+                    if (!currentSlot) return null;
+                    return (
+                      <div className="mt-1.5 flex items-center justify-between text-[11px]">
+                        <span className="text-slate-500 font-medium">
+                          Capacity: {currentSlot.totalCapacity} slots/hr ({currentSlot.bookedCount} booked)
+                        </span>
+                        <span
+                          className={`font-bold px-2 py-0.5 rounded-full ${
+                            currentSlot.isFullyBooked
+                              ? 'bg-rose-100 text-rose-800'
+                              : currentSlot.remainingSlots <= 3
+                              ? 'bg-amber-100 text-amber-800'
+                              : 'bg-emerald-100 text-emerald-800'
+                          }`}
+                        >
+                          {currentSlot.label}
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
 

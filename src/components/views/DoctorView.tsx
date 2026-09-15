@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Doctor, Hospital, LanguageCode, User } from '../../types';
 import { translations } from '../../utils/translations';
 import { apiStore } from '../../services/apiStore';
@@ -40,6 +40,38 @@ export const DoctorView: React.FC<DoctorViewProps> = ({
     return today.toISOString().split('T')[0];
   });
   const [selectedSlot, setSelectedSlot] = useState<string>('');
+
+  const [appointmentVersion, setAppointmentVersion] = useState(0);
+
+  useEffect(() => {
+    const handleAppointmentsChange = () => {
+      setAppointmentVersion((v) => v + 1);
+    };
+    window.addEventListener('healthcare-appointments-updated', handleAppointmentsChange);
+    window.addEventListener('storage', handleAppointmentsChange);
+    return () => {
+      window.removeEventListener('healthcare-appointments-updated', handleAppointmentsChange);
+      window.removeEventListener('storage', handleAppointmentsChange);
+    };
+  }, []);
+
+  const slotsWithAvailability = useMemo(() => {
+    if (!doctor) return [];
+    return apiStore.getDoctorSlotsWithAvailability(doctor, selectedDate);
+  }, [doctor, selectedDate, appointmentVersion]);
+
+  useEffect(() => {
+    if (slotsWithAvailability.length === 0) return;
+    const current = slotsWithAvailability.find((s) => s.slot === selectedSlot);
+    if (!current || current.isFullyBooked) {
+      const nextAvail = slotsWithAvailability.find((s) => !s.isFullyBooked);
+      if (nextAvail) {
+        setSelectedSlot(nextAvail.slot);
+      } else if (slotsWithAvailability[0]) {
+        setSelectedSlot(slotsWithAvailability[0].slot);
+      }
+    }
+  }, [slotsWithAvailability, selectedSlot]);
 
   if (!doctor || !hospital) {
     return (
@@ -161,23 +193,44 @@ export const DoctorView: React.FC<DoctorViewProps> = ({
 
           {/* Time Slots */}
           <div className="space-y-2">
-            <label className="block text-xs font-semibold text-slate-700">Available Time Slots</label>
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-semibold text-slate-700">Available Time Slots</label>
+              <span className="text-[11px] text-slate-500 font-medium">9:00 AM - 4:00 PM (6 min consultation)</span>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {doctor.timeSlots.map((slot) => {
-                const isSelected = selectedSlot === slot || (!selectedSlot && doctor.timeSlots[0] === slot);
+              {slotsWithAvailability.map(({ slot, label, isFullyBooked, remainingSlots }) => {
+                const isSelected = selectedSlot === slot;
                 return (
                   <button
                     key={slot}
                     type="button"
+                    disabled={isFullyBooked}
                     onClick={() => setSelectedSlot(slot)}
                     className={`p-3 rounded-xl border text-left text-xs font-bold transition-all flex items-center justify-between ${
-                      isSelected
-                        ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
-                        : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                      isFullyBooked
+                        ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed opacity-60'
+                        : isSelected
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-xs cursor-pointer'
+                        : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100 cursor-pointer'
                     }`}
                   >
-                    <span>{slot}</span>
-                    {isSelected && <CheckCircle2 className="w-4 h-4 text-white" />}
+                    <div>
+                      <span className="block font-bold">{slot}</span>
+                      <span
+                        className={`text-[10px] inline-block font-semibold px-1.5 py-0.5 rounded-md mt-1 ${
+                          isSelected
+                            ? 'bg-blue-700 text-white'
+                            : isFullyBooked
+                            ? 'bg-rose-100 text-rose-700'
+                            : remainingSlots <= 3
+                            ? 'bg-amber-100 text-amber-800'
+                            : 'bg-emerald-100 text-emerald-800'
+                        }`}
+                      >
+                        {label}
+                      </span>
+                    </div>
+                    {isSelected && <CheckCircle2 className="w-4 h-4 text-white shrink-0 ml-2" />}
                   </button>
                 );
               })}

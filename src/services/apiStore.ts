@@ -7,7 +7,16 @@ import {
   Appointment,
   Feedback,
   Complaint,
-  UserRole
+  UserRole,
+  Teleconsultation,
+  TriageAssessment,
+  HealthRecord,
+  PatientReferral,
+  DiagnosticService,
+  OPDQueueInfo,
+  HighRiskPatient,
+  FacilityQualityScore,
+  EmergencyIncident
 } from '../types';
 import {
   DEMO_USERS,
@@ -17,9 +26,18 @@ import {
   INITIAL_MEDICINES,
   INITIAL_APPOINTMENTS,
   INITIAL_FEEDBACKS,
-  INITIAL_COMPLAINTS
+  INITIAL_COMPLAINTS,
+  INITIAL_DIAGNOSTICS,
+  INITIAL_TELECONSULTATIONS,
+  INITIAL_HEALTH_RECORDS,
+  INITIAL_REFERRALS,
+  INITIAL_OPD_QUEUES,
+  INITIAL_HIGH_RISK_PATIENTS,
+  INITIAL_QUALITY_SCORES,
+  INITIAL_EMERGENCIES
 } from '../data/mockData';
 import { saveAppointmentToFirestore } from './firebase';
+import { isReferralForUser, normalizeReferralStatus } from '../utils/referralUtils';
 
 const STORAGE_KEYS = {
   USERS: 'sih_users',
@@ -30,7 +48,17 @@ const STORAGE_KEYS = {
   MEDICINES: 'sih_medicines',
   APPOINTMENTS: 'sih_appointments',
   FEEDBACKS: 'sih_feedbacks',
-  COMPLAINTS: 'sih_complaints'
+  COMPLAINTS: 'sih_complaints',
+  DIAGNOSTICS: 'sih_diagnostics',
+  TELECONSULTATIONS: 'sih_teleconsultations',
+  TRIAGE: 'sih_triage',
+  HEALTH_RECORDS: 'sih_health_records',
+  REFERRALS: 'sih_referrals',
+  QUEUES: 'sih_queues',
+  HIGH_RISK: 'sih_high_risk',
+  QUALITY_SCORES: 'sih_quality_scores',
+  EMERGENCIES: 'sih_emergencies',
+  OFFLINE_TOKENS: 'sih_offline_tokens'
 };
 
 function getLocal<T>(key: string, defaultVal: T): T {
@@ -63,6 +91,15 @@ export function calculateDistance(lat1: number, lon1: number, lat2: number, lon2
       Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return Math.round(R * c * 10) / 10;
+}
+
+export interface SlotAvailabilityInfo {
+  slot: string;
+  totalCapacity: number;
+  bookedCount: number;
+  remainingSlots: number;
+  isFullyBooked: boolean;
+  label: string;
 }
 
 class ApiStore {
@@ -132,11 +169,31 @@ class ApiStore {
     setLocal(STORAGE_KEYS.CURRENT_USER, user);
   }
 
-  switchDemoUser(role: UserRole): User {
+  switchDemoUser(role: UserRole, targetHospitalId?: string): User {
     const users = this.getUsers();
-    const found = users.find((u) => u.role === role) || users[0];
-    this.setCurrentUser(found);
-    return found;
+    let found: User | undefined;
+    if (role === 'HOSPITAL_ADMIN' || role === 'ADMIN') {
+      if (targetHospitalId) {
+        found = users.find(
+          (u) => (u.role === 'HOSPITAL_ADMIN' || u.role === 'ADMIN') && u.hospitalId === targetHospitalId
+        );
+      }
+      if (!found) {
+        found = users.find((u) => u.role === 'HOSPITAL_ADMIN' || u.role === 'ADMIN');
+      }
+    } else if (role === 'HOSPITAL_STAFF') {
+      if (targetHospitalId) {
+        found = users.find((u) => u.role === 'HOSPITAL_STAFF' && u.hospitalId === targetHospitalId);
+      }
+      if (!found) {
+        found = users.find((u) => u.role === 'HOSPITAL_STAFF');
+      }
+    } else {
+      found = users.find((u) => u.role === role);
+    }
+    const finalUser = found || users[0];
+    this.setCurrentUser(finalUser);
+    return finalUser;
   }
 
   loginWithGoogle(email: string, name?: string): User {
@@ -379,8 +436,15 @@ class ApiStore {
     }
 
     // Role check if expectedRole is passed
-    if (expectedRole && found.role !== expectedRole) {
-      return null;
+    if (expectedRole) {
+      const isExpectedAdmin = expectedRole === 'HOSPITAL_ADMIN' || expectedRole === 'ADMIN';
+      const isFoundAdmin = found.role === 'HOSPITAL_ADMIN' || found.role === 'ADMIN';
+      if (isExpectedAdmin && !isFoundAdmin) {
+        return null;
+      }
+      if (!isExpectedAdmin && found.role !== expectedRole) {
+        return null;
+      }
     }
 
     // Password validation: checks against stored passwords or default password123 for seeded users
@@ -389,6 +453,9 @@ class ApiStore {
         'shaiksalma1125@gmail.com': 'password123',
         'citizen@healthcare.gov.in': 'password123',
         'staff@ggh.gov.in': 'password123',
+        'admin.ggh@hospital.gov.in': 'password123',
+        'admin.chc@hospital.gov.in': 'password123',
+        'admin.phc@hospital.gov.in': 'password123',
         'admin@mohfw.gov.in': 'password123',
         'ravi.kumar@example.com': 'password123',
         'dr.rao@example.com': 'password123',
@@ -466,6 +533,68 @@ class ApiStore {
     return this.getHospitals().find((h) => h.id === id);
   }
 
+  saveHospital(hospitalData: Partial<Hospital> & { name: string }): Hospital {
+    const list = this.getHospitals();
+    if (hospitalData.id) {
+      const idx = list.findIndex((h) => h.id === hospitalData.id);
+      if (idx !== -1) {
+        list[idx] = { ...list[idx], ...hospitalData } as Hospital;
+        setLocal(STORAGE_KEYS.HOSPITALS, list);
+        return list[idx];
+      }
+    }
+
+    const newHosp: Hospital = {
+      id: `hosp-${Date.now()}`,
+      name: hospitalData.name.trim(),
+      address: hospitalData.address?.trim() || 'Main Hospital Road',
+      village: hospitalData.village?.trim() || 'Urban Zone',
+      mandal: hospitalData.mandal?.trim() || 'District Mandal',
+      district: hospitalData.district?.trim() || 'NTR District',
+      state: hospitalData.state?.trim() || 'Andhra Pradesh',
+      pincode: hospitalData.pincode?.trim() || '520001',
+      latitude: hospitalData.latitude || 16.5062 + (Math.random() - 0.5) * 0.02,
+      longitude: hospitalData.longitude || 80.6480 + (Math.random() - 0.5) * 0.02,
+      phone: hospitalData.phone?.trim() || '+91 866-2475100',
+      emergencyPhone: hospitalData.emergencyPhone?.trim() || '108 / 102',
+      openingHours: hospitalData.openingHours?.trim() || '24 Hours | OPD: 08:30 AM - 01:30 PM',
+      hospitalType: hospitalData.hospitalType || 'Government Hospital',
+      facilities:
+        hospitalData.facilities && hospitalData.facilities.length > 0
+          ? hospitalData.facilities
+          : ['24x7 Emergency Casualty', 'General OPD', 'Jan Aushadhi Medical Store', 'Diagnostic Lab'],
+      rating: hospitalData.rating || 4.5,
+      totalReviews: hospitalData.totalReviews || 12,
+      emergencyAvailable: hospitalData.emergencyAvailable ?? true,
+      isOpen: hospitalData.isOpen ?? true
+    };
+
+    list.unshift(newHosp);
+    setLocal(STORAGE_KEYS.HOSPITALS, list);
+    return newHosp;
+  }
+
+  deleteHospital(id: string): void {
+    const list = this.getHospitals().filter((h) => h.id !== id);
+    setLocal(STORAGE_KEYS.HOSPITALS, list);
+  }
+
+  assignHospitalToUser(userId: string, hospitalId: string): User | undefined {
+    const users = this.getUsers();
+    const idx = users.findIndex((u) => u.id === userId);
+    if (idx !== -1) {
+      users[idx].hospitalId = hospitalId;
+      setLocal(STORAGE_KEYS.USERS, users);
+      const cur = this.getCurrentUser();
+      if (cur && cur.id === userId) {
+        cur.hospitalId = hospitalId;
+        this.setCurrentUser(cur);
+      }
+      return users[idx];
+    }
+    return undefined;
+  }
+
   // Doctors
   getDoctors(hospitalId?: string): Doctor[] {
     const docs = getLocal<Doctor[]>(STORAGE_KEYS.DOCTORS, INITIAL_DOCTORS);
@@ -534,6 +663,200 @@ class ApiStore {
   deleteDoctor(id: string): void {
     const docs = this.getDoctors().filter((d) => d.id !== id);
     setLocal(STORAGE_KEYS.DOCTORS, docs);
+  }
+
+  updateDoctorSlots(doctorId: string, timeSlots: string[], availableDays?: string[]): Doctor | undefined {
+    const docs = this.getDoctors();
+    const idx = docs.findIndex((d) => d.id === doctorId);
+    if (idx !== -1) {
+      docs[idx].timeSlots = timeSlots;
+      if (availableDays) {
+        docs[idx].availableDays = availableDays;
+      }
+      setLocal(STORAGE_KEYS.DOCTORS, docs);
+      return docs[idx];
+    }
+    return undefined;
+  }
+
+  updateDoctorSpecialization(
+    doctorId: string,
+    specialization: string,
+    qualification?: string,
+    experience?: number,
+    consultationFee?: number
+  ): Doctor | undefined {
+    const docs = this.getDoctors();
+    const idx = docs.findIndex((d) => d.id === doctorId);
+    if (idx !== -1) {
+      docs[idx].specialization = specialization;
+      if (qualification !== undefined) docs[idx].qualification = qualification;
+      if (experience !== undefined) docs[idx].experience = experience;
+      if (consultationFee !== undefined) docs[idx].consultationFee = consultationFee;
+      setLocal(STORAGE_KEYS.DOCTORS, docs);
+      return docs[idx];
+    }
+    return undefined;
+  }
+
+  // Doctor Working Time & Slot Capacity Utilities
+  parseTimeToMinutes(timeStr: string): number {
+    const clean = timeStr.trim().toUpperCase();
+    const match = clean.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
+    if (!match) return 540;
+    let hours = parseInt(match[1], 10);
+    const minutes = parseInt(match[2], 10);
+    const meridiem = match[3];
+
+    if (meridiem === 'PM' && hours < 12) hours += 12;
+    if (meridiem === 'AM' && hours === 12) hours = 0;
+
+    return hours * 60 + minutes;
+  }
+
+  formatMinutesToTime(totalMinutes: number): string {
+    const hours24 = Math.floor(totalMinutes / 60) % 24;
+    const mins = totalMinutes % 60;
+    const meridiem = hours24 >= 12 ? 'PM' : 'AM';
+    const hours12 = hours24 % 12 === 0 ? 12 : hours24 % 12;
+    return `${String(hours12).padStart(2, '0')}:${String(mins).padStart(2, '0')} ${meridiem}`;
+  }
+
+  getDoctorWorkingHours(doctor: Doctor): { start: string; end: string } {
+    if (doctor.workingHours && doctor.workingHours.start && doctor.workingHours.end) {
+      return doctor.workingHours;
+    }
+    return { start: '09:00 AM', end: '04:00 PM' };
+  }
+
+  getConsultationDurationMinutes(doctor?: Doctor): number {
+    if (doctor && typeof doctor.consultationDurationMinutes === 'number' && doctor.consultationDurationMinutes > 0) {
+      return doctor.consultationDurationMinutes;
+    }
+    return 6; // Default 6 minutes per patient as specified in requirement
+  }
+
+  getDoctorHourlySlots(doctor: Doctor): string[] {
+    const wh = this.getDoctorWorkingHours(doctor);
+    const startMins = this.parseTimeToMinutes(wh.start);
+    const endMins = this.parseTimeToMinutes(wh.end);
+
+    const slots: string[] = [];
+    let cur = startMins;
+    while (cur + 60 <= endMins) {
+      const slotStart = this.formatMinutesToTime(cur);
+      const slotEnd = this.formatMinutesToTime(cur + 60);
+      slots.push(`${slotStart} - ${slotEnd}`);
+      cur += 60;
+    }
+
+    if (slots.length === 0) {
+      return doctor.timeSlots && doctor.timeSlots.length > 0
+        ? doctor.timeSlots
+        : ['09:00 AM - 10:00 AM', '10:00 AM - 11:00 AM', '11:00 AM - 12:00 PM', '01:00 PM - 02:00 PM', '02:00 PM - 03:00 PM', '03:00 PM - 04:00 PM'];
+    }
+
+    return slots;
+  }
+
+  getDoctorSlotCapacity(doctor: Doctor, slotString: string): number {
+    const parts = slotString.split('-');
+    let slotDurationMinutes = 60;
+    if (parts.length === 2) {
+      const start = this.parseTimeToMinutes(parts[0]);
+      const end = this.parseTimeToMinutes(parts[1]);
+      if (end > start) {
+        slotDurationMinutes = end - start;
+      }
+    }
+    const durationPerPatient = this.getConsultationDurationMinutes(doctor);
+    return Math.max(1, Math.floor(slotDurationMinutes / durationPerPatient));
+  }
+
+  areSlotsMatching(timeA: string, timeB: string): boolean {
+    if (!timeA || !timeB) return false;
+    const cleanA = timeA.trim().replace(/\s+/g, ' ');
+    const cleanB = timeB.trim().replace(/\s+/g, ' ');
+    if (cleanA.toLowerCase() === cleanB.toLowerCase()) return true;
+
+    // Check by splitting on delimiter (- or – or to)
+    const splitA = cleanA.split(/[-–—]|to/i).map((s) => s.trim());
+    const splitB = cleanB.split(/[-–—]|to/i).map((s) => s.trim());
+
+    if (splitA.length >= 2 && splitB.length >= 2) {
+      const startA = this.parseTimeToMinutes(splitA[0]);
+      const endA = this.parseTimeToMinutes(splitA[1]);
+      const startB = this.parseTimeToMinutes(splitB[0]);
+      const endB = this.parseTimeToMinutes(splitB[1]);
+      return startA === startB && endA === endB;
+    }
+
+    return false;
+  }
+
+  getSlotAvailability(doctorId: string, date: string, slotString: string): SlotAvailabilityInfo {
+    const doc = this.getDoctorById(doctorId);
+    const totalCapacity = doc ? this.getDoctorSlotCapacity(doc, slotString) : 10;
+    const allAppointments = this.getAppointments();
+
+    const cleanDate = date.trim().slice(0, 10);
+    const bookedCount = allAppointments.filter(
+      (a) =>
+        a.doctorId === doctorId &&
+        a.appointmentDate.trim().slice(0, 10) === cleanDate &&
+        this.areSlotsMatching(a.appointmentTime, slotString) &&
+        a.status !== 'CANCELLED'
+    ).length;
+
+    const remainingSlots = Math.max(0, totalCapacity - bookedCount);
+    const isFullyBooked = remainingSlots <= 0;
+
+    let label = '';
+    if (isFullyBooked) {
+      label = 'Fully booked';
+    } else if (bookedCount === 0) {
+      label = `${totalCapacity} slots available`;
+    } else if (remainingSlots === 1) {
+      label = '1 slot left';
+    } else {
+      label = `${remainingSlots} slots left`;
+    }
+
+    return {
+      slot: slotString,
+      totalCapacity,
+      bookedCount,
+      remainingSlots,
+      isFullyBooked,
+      label
+    };
+  }
+
+  getDoctorSlotsWithAvailability(doctor: Doctor, date: string): SlotAvailabilityInfo[] {
+    const slots = this.getDoctorHourlySlots(doctor);
+    return slots.map((s) => this.getSlotAvailability(doctor.id, date, s));
+  }
+
+  getNextAvailableSlot(doctorId: string, date: string, currentSlot?: string): string | undefined {
+    const doc = this.getDoctorById(doctorId);
+    if (!doc) return undefined;
+    const slots = this.getDoctorSlotsWithAvailability(doc, date);
+
+    let foundCurrent = !currentSlot;
+    for (const item of slots) {
+      if (!foundCurrent) {
+        if (item.slot === currentSlot) {
+          foundCurrent = true;
+        }
+        continue;
+      }
+      if (!item.isFullyBooked) {
+        return item.slot;
+      }
+    }
+
+    const available = slots.find((s) => !s.isFullyBooked);
+    return available ? available.slot : undefined;
   }
 
   // Services
@@ -605,6 +928,11 @@ class ApiStore {
     srvs.push(newSrv);
     setLocal(STORAGE_KEYS.SERVICES, srvs);
     return newSrv;
+  }
+
+  deleteService(id: string): void {
+    const srvs = this.getServices().filter((s) => s.id !== id);
+    setLocal(STORAGE_KEYS.SERVICES, srvs);
   }
 
   // Medicines
@@ -685,6 +1013,652 @@ class ApiStore {
     return newMed;
   }
 
+  deleteMedicine(id: string): void {
+    const meds = this.getMedicines().filter((m) => m.id !== id);
+    setLocal(STORAGE_KEYS.MEDICINES, meds);
+  }
+
+  findAlternativeHospitalsForMedicine(medicineName: string, currentHospitalId: string): Array<{
+    medicine: MedicineStock;
+    hospital: Hospital;
+    distance?: number;
+  }> {
+    const allMeds = this.getMedicines();
+    const currentHosp = this.getHospitalById(currentHospitalId);
+    const matching = allMeds.filter(
+      (m) =>
+        m.hospitalId !== currentHospitalId &&
+        m.medicineName.toLowerCase().includes(medicineName.toLowerCase()) &&
+        (m.status === 'AVAILABLE' || m.quantity > 0)
+    );
+    const hospitals = this.getHospitals();
+    const results: Array<{ medicine: MedicineStock; hospital: Hospital; distance?: number }> = [];
+
+    for (const m of matching) {
+      const hosp = hospitals.find((h) => h.id === m.hospitalId);
+      if (hosp) {
+        let dist: number | undefined;
+        if (currentHosp) {
+          dist = Math.round(calculateDistance(currentHosp.latitude, currentHosp.longitude, hosp.latitude, hosp.longitude) * 10) / 10;
+        }
+        results.push({
+          medicine: m,
+          hospital: hosp,
+          distance: dist
+        });
+      }
+    }
+    return results.sort((a, b) => (a.distance || 0) - (b.distance || 0));
+  }
+
+  // Diagnostics Coordination & Availability
+  getDiagnostics(hospitalId?: string): DiagnosticService[] {
+    const items = getLocal<DiagnosticService[]>(STORAGE_KEYS.DIAGNOSTICS, INITIAL_DIAGNOSTICS);
+    const existingIds = new Set(items.map((i) => i.id));
+    let updated = false;
+    for (const d of INITIAL_DIAGNOSTICS) {
+      if (!existingIds.has(d.id)) {
+        items.push(d);
+        updated = true;
+      }
+    }
+    if (updated) {
+      setLocal(STORAGE_KEYS.DIAGNOSTICS, items);
+    }
+    if (hospitalId) {
+      return items.filter((d) => d.hospitalId === hospitalId);
+    }
+    return items;
+  }
+
+  saveDiagnostic(
+    item: Partial<DiagnosticService> & { hospitalId: string; name: string }
+  ): DiagnosticService {
+    const list = this.getDiagnostics();
+    if (item.id) {
+      const idx = list.findIndex((d) => d.id === item.id);
+      if (idx !== -1) {
+        list[idx] = { ...list[idx], ...item } as DiagnosticService;
+        setLocal(STORAGE_KEYS.DIAGNOSTICS, list);
+        return list[idx];
+      }
+    }
+    const newDiag: DiagnosticService = {
+      id: `diag-${Date.now()}`,
+      hospitalId: item.hospitalId,
+      name: item.name,
+      category: item.category || 'Pathology',
+      equipmentStatus: item.equipmentStatus || 'OPERATIONAL',
+      sampleTimings: item.sampleTimings || '09:00 AM - 02:00 PM',
+      reportTurnaroundHours: item.reportTurnaroundHours || 2,
+      isFreeUnderNHM: item.isFreeUnderNHM ?? true,
+      price: item.price || 0,
+      slotsAvailableToday: item.slotsAvailableToday ?? 25,
+      nextAvailableSlot: item.nextAvailableSlot || 'Today, 11:30 AM'
+    };
+    list.push(newDiag);
+    setLocal(STORAGE_KEYS.DIAGNOSTICS, list);
+    return newDiag;
+  }
+
+  deleteDiagnostic(id: string): void {
+    const list = this.getDiagnostics().filter((d) => d.id !== id);
+    setLocal(STORAGE_KEYS.DIAGNOSTICS, list);
+  }
+
+  // Assisted Teleconsultation
+  getTeleconsultations(filter?: {
+    hospitalId?: string;
+    patientPhone?: string;
+    doctorId?: string;
+  }): Teleconsultation[] {
+    const items = getLocal<Teleconsultation[]>(STORAGE_KEYS.TELECONSULTATIONS, INITIAL_TELECONSULTATIONS);
+    const existingIds = new Set(items.map((t) => t.id));
+    let updated = false;
+    for (const t of INITIAL_TELECONSULTATIONS) {
+      if (!existingIds.has(t.id)) {
+        items.push(t);
+        updated = true;
+      }
+    }
+    if (updated) {
+      setLocal(STORAGE_KEYS.TELECONSULTATIONS, items);
+    }
+    let res = items;
+    if (filter?.hospitalId) {
+      res = res.filter((t) => t.hospitalId === filter.hospitalId);
+    }
+    if (filter?.patientPhone) {
+      res = res.filter((t) => t.patientPhone.includes(filter.patientPhone!));
+    }
+    if (filter?.doctorId) {
+      res = res.filter((t) => t.doctorId === filter.doctorId);
+    }
+    return res.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  bookTeleconsultation(
+    data: Omit<Teleconsultation, 'id' | 'teleconsultId' | 'status' | 'createdAt'>
+  ): Teleconsultation {
+    const list = this.getTeleconsultations();
+    const count = list.length + 1;
+    const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+    const teleconsultId = `TC-${new Date().getFullYear()}-${randomSuffix}`;
+    const newTC: Teleconsultation = {
+      ...data,
+      id: `tc-${Date.now()}`,
+      teleconsultId,
+      status: 'WAITING',
+      createdAt: new Date().toISOString()
+    };
+    list.unshift(newTC);
+    setLocal(STORAGE_KEYS.TELECONSULTATIONS, list);
+
+    // Also link record to health records if user is active
+    const user = this.getCurrentUser();
+    if (user) {
+      this.addHealthRecord({
+        userId: user.id,
+        abhaNumber: '91-2026-8812-4029',
+        abhaAddress: `${user.name.toLowerCase().replace(/[^a-z0-9]/g, '')}@abdm`,
+        recordType: 'PRESCRIPTION',
+        title: `Teleconsultation Booking - ${newTC.doctorSpecialization}`,
+        facilityName: newTC.hospitalName,
+        doctorName: newTC.doctorName,
+        date: new Date().toISOString().split('T')[0],
+        summary: `Scheduled consultation for ${newTC.symptoms}. Mode: ${newTC.assistedByAsha ? 'ASHA Assisted' : 'Direct Patient'}.`,
+        details: { teleconsultId, vitals: newTC.vitals }
+      });
+    }
+
+    return newTC;
+  }
+
+  updateTeleconsultationStatus(
+    id: string,
+    status: Teleconsultation['status'],
+    prescription?: Teleconsultation['prescription']
+  ): Teleconsultation | undefined {
+    const list = this.getTeleconsultations();
+    const idx = list.findIndex((t) => t.id === id);
+    if (idx !== -1) {
+      list[idx].status = status;
+      if (prescription) {
+        list[idx].prescription = prescription;
+      }
+      setLocal(STORAGE_KEYS.TELECONSULTATIONS, list);
+      return list[idx];
+    }
+    return undefined;
+  }
+
+  // Digital Triage
+  getTriageAssessments(): TriageAssessment[] {
+    return getLocal<TriageAssessment[]>(STORAGE_KEYS.TRIAGE, []);
+  }
+
+  saveTriageAssessment(assessment: Omit<TriageAssessment, 'id' | 'createdAt'>): TriageAssessment {
+    const list = this.getTriageAssessments();
+    const newAssess: TriageAssessment = {
+      ...assessment,
+      id: `trg-${Date.now()}`,
+      createdAt: new Date().toISOString()
+    };
+    list.unshift(newAssess);
+    setLocal(STORAGE_KEYS.TRIAGE, list);
+    return newAssess;
+  }
+
+  // Patient Health Records / ABHA
+  getHealthRecords(userIdOrAbha?: string): HealthRecord[] {
+    const items = getLocal<HealthRecord[]>(STORAGE_KEYS.HEALTH_RECORDS, INITIAL_HEALTH_RECORDS);
+    const existingIds = new Set(items.map((h) => h.id));
+    let updated = false;
+    for (const h of INITIAL_HEALTH_RECORDS) {
+      if (!existingIds.has(h.id)) {
+        items.push(h);
+        updated = true;
+      }
+    }
+    if (updated) {
+      setLocal(STORAGE_KEYS.HEALTH_RECORDS, items);
+    }
+    if (userIdOrAbha) {
+      return items.filter(
+        (h) =>
+          h.userId === userIdOrAbha ||
+          h.abhaNumber.includes(userIdOrAbha) ||
+          h.abhaAddress.includes(userIdOrAbha)
+      );
+    }
+    return items;
+  }
+
+  addHealthRecord(rec: Omit<HealthRecord, 'id'>): HealthRecord {
+    const list = this.getHealthRecords();
+    const newRec: HealthRecord = {
+      ...rec,
+      id: `rec-${Date.now()}`
+    };
+    list.unshift(newRec);
+    setLocal(STORAGE_KEYS.HEALTH_RECORDS, list);
+    return newRec;
+  }
+
+  deleteHealthRecord(id: string): void {
+    const list = this.getHealthRecords().filter((r) => r.id !== id);
+    setLocal(STORAGE_KEYS.HEALTH_RECORDS, list);
+  }
+
+  // Inter-Facility Referral Tracking
+  getReferrals(hospitalId?: string): PatientReferral[] {
+    const items = getLocal<PatientReferral[]>(STORAGE_KEYS.REFERRALS, INITIAL_REFERRALS);
+    const existingIds = new Set(items.map((r) => r.id));
+    let updated = false;
+    for (const r of INITIAL_REFERRALS) {
+      if (!existingIds.has(r.id)) {
+        items.push(r);
+        updated = true;
+      }
+    }
+    // Ensure existing items have doctorSpecialist, referralReason, and normalized fields
+    for (const r of items) {
+      if (!r.referralReason && r.reason) {
+        r.referralReason = r.reason;
+        updated = true;
+      }
+      if (!r.doctorSpecialist) {
+        r.doctorSpecialist = r.referredByDoctor || r.department || 'Consultant Specialist';
+        updated = true;
+      }
+      // Ensure patientId is present; if missing, dynamically link with registered citizens
+      if (!r.patientId || r.patientId === 'usr-cit-1' || r.patientId === 'usr-cit-2') {
+        const citizens = this.getUsers().filter((u) => u.role === 'CITIZEN');
+        const matched = citizens.find((u) => {
+          if (r.patientEmail && u.email && r.patientEmail.toLowerCase().trim() === u.email.toLowerCase().trim()) return true;
+          if (r.patientPhone && u.mobile) {
+            const uDigits = u.mobile.replace(/\D/g, '').slice(-10);
+            const rDigits = r.patientPhone.replace(/\D/g, '').slice(-10);
+            if (uDigits && rDigits && uDigits.length === 10 && uDigits === rDigits) return true;
+          }
+          return false;
+        });
+        r.patientId = matched ? matched.id : `patient-${r.id}`;
+        updated = true;
+      }
+    }
+    if (updated) {
+      setLocal(STORAGE_KEYS.REFERRALS, items);
+    }
+    if (hospitalId) {
+      return items.filter((r) => r.fromHospitalId === hospitalId || r.toHospitalId === hospitalId);
+    }
+    return items;
+  }
+
+  getReferralsForCitizen(user: User): PatientReferral[] {
+    if (!user) return [];
+    const items = this.getReferrals();
+    return items.filter((r) => isReferralForUser(r, user));
+  }
+
+  createReferral(
+    ref: Partial<PatientReferral> & {
+      patientName: string;
+      fromHospitalId: string;
+      toHospitalId: string;
+      fromHospitalName: string;
+      toHospitalName: string;
+      reason: string;
+    }
+  ): PatientReferral {
+    const list = this.getReferrals();
+    const randomCode = Math.floor(1000 + Math.random() * 9000);
+    const referralId = ref.referralId || `REF-${new Date().getFullYear()}-GOV-${randomCode}`;
+    const initialStatus = ref.status ? normalizeReferralStatus(ref.status) : 'Pending';
+    const initialDate = ref.referralDate || new Date().toISOString().split('T')[0];
+
+    // Determine patientId: use provided patientId or link to existing citizen account
+    let patientId = ref.patientId;
+    if (!patientId) {
+      const users = this.getUsers().filter((u) => u.role === 'CITIZEN');
+      const matched = users.find((u) => {
+        if (ref.patientEmail && u.email && ref.patientEmail.toLowerCase().trim() === u.email.toLowerCase().trim()) return true;
+        if (ref.patientPhone && u.mobile) {
+          const uDigits = u.mobile.replace(/\D/g, '').slice(-10);
+          const rDigits = ref.patientPhone.replace(/\D/g, '').slice(-10);
+          if (uDigits && rDigits && uDigits === rDigits) return true;
+        }
+        if (ref.patientName && u.name && ref.patientName.toLowerCase().trim() === u.name.toLowerCase().trim()) return true;
+        return false;
+      });
+      if (matched) {
+        patientId = matched.id;
+      } else {
+        patientId = `patient-${Date.now()}`;
+      }
+    }
+
+    const newRef: PatientReferral = {
+      id: ref.id || `ref-${Date.now()}`,
+      referralId,
+      patientId,
+      patientName: ref.patientName,
+      patientAge: ref.patientAge || 35,
+      patientGender: ref.patientGender || 'Other',
+      patientPhone: ref.patientPhone || '',
+      patientEmail: ref.patientEmail,
+      fromHospitalId: ref.fromHospitalId,
+      fromHospitalName: ref.fromHospitalName,
+      toHospitalId: ref.toHospitalId,
+      toHospitalName: ref.toHospitalName,
+      department: ref.department || 'Specialist Consultation',
+      doctorName: ref.doctorName,
+      specialist: ref.specialist,
+      referredByDoctor: ref.referredByDoctor || 'Medical Officer In-charge',
+      doctorSpecialist: ref.doctorSpecialist || ref.specialist || 'Consultant Specialist',
+      reason: ref.reason,
+      referralReason: ref.referralReason || ref.reason,
+      clinicalSummary: ref.clinicalSummary || ref.reason,
+      priority: ref.priority || 'ROUTINE',
+      transportRequired: ref.transportRequired || 'SELF_TRANSPORT',
+      transportMode: ref.transportMode || (ref.transportRequired === '108_AMBULANCE' ? 'AMBULANCE_108' : 'SELF_TRANSPORT'),
+      status: initialStatus,
+      referralDate: initialDate,
+      qrCodeToken: ref.qrCodeToken || `${referralId}-VERIFIED-HEALTH-GATEWAY`,
+      notes: ref.notes,
+      updatedAt: new Date().toISOString()
+    };
+
+    list.unshift(newRef);
+    setLocal(STORAGE_KEYS.REFERRALS, list);
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('healthcare-referrals-updated', {
+          detail: {
+            action: 'CREATED',
+            referral: newRef
+          }
+        })
+      );
+    }
+
+    return newRef;
+  }
+
+  updateReferralStatus(id: string, status: PatientReferral['status']): PatientReferral | undefined {
+    const list = this.getReferrals();
+    const idx = list.findIndex((r) => r.id === id || r.referralId === id);
+    if (idx !== -1) {
+      list[idx].status = status;
+      list[idx].updatedAt = new Date().toISOString();
+      const updatedRef = list[idx];
+      setLocal(STORAGE_KEYS.REFERRALS, list);
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('healthcare-referrals-updated', {
+            detail: {
+              action: 'STATUS_UPDATED',
+              referral: updatedRef,
+              status
+            }
+          })
+        );
+      }
+      return updatedRef;
+    }
+    return undefined;
+  }
+
+  updateReferral(id: string, updates: Partial<PatientReferral>): PatientReferral | undefined {
+    const list = this.getReferrals();
+    const idx = list.findIndex((r) => r.id === id || r.referralId === id);
+    if (idx !== -1) {
+      list[idx] = {
+        ...list[idx],
+        ...updates,
+        updatedAt: new Date().toISOString()
+      };
+      const updatedRef = list[idx];
+      setLocal(STORAGE_KEYS.REFERRALS, list);
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('healthcare-referrals-updated', {
+            detail: {
+              action: 'UPDATED',
+              referral: updatedRef
+            }
+          })
+        );
+      }
+      return updatedRef;
+    }
+    return undefined;
+  }
+
+  // Live OPD Queue & Waiting Time Management
+  getQueues(hospitalId?: string): OPDQueueInfo[] {
+    const items = getLocal<OPDQueueInfo[]>(STORAGE_KEYS.QUEUES, INITIAL_OPD_QUEUES);
+    const existingIds = new Set(items.map((q) => q.id));
+    let updated = false;
+    for (const q of INITIAL_OPD_QUEUES) {
+      if (!existingIds.has(q.id)) {
+        items.push(q);
+        updated = true;
+      }
+    }
+    if (updated) {
+      setLocal(STORAGE_KEYS.QUEUES, items);
+    }
+    if (hospitalId) {
+      return items.filter((q) => q.hospitalId === hospitalId);
+    }
+    return items;
+  }
+
+  callNextQueueToken(queueId: string): OPDQueueInfo | undefined {
+    const queues = this.getQueues();
+    const idx = queues.findIndex((q) => q.id === queueId);
+    if (idx !== -1) {
+      const q = queues[idx];
+      if (q.currentTokenNumber < q.totalTokensIssued) {
+        q.currentTokenNumber += 1;
+        q.currentServingToken = `TK-${String(q.currentTokenNumber).padStart(2, '0')}`;
+        q.lastUpdated = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        q.status = 'CALLING';
+        setLocal(STORAGE_KEYS.QUEUES, queues);
+        return q;
+      }
+    }
+    return undefined;
+  }
+
+  issueQueueToken(
+    hospitalId: string,
+    department: string,
+    patientName: string
+  ): { tokenNumber: number; tokenCode: string; estimatedWaitMins: number; roomNumber: string } {
+    const queues = this.getQueues();
+    let q = queues.find((item) => item.hospitalId === hospitalId && item.department === department);
+    if (!q) {
+      // Create a queue if not exists
+      const hosp = this.getHospitalById(hospitalId);
+      q = {
+        id: `q-${Date.now()}`,
+        hospitalId,
+        department,
+        doctorName: 'OPD Duty Medical Officer',
+        currentServingToken: 'TK-01',
+        currentTokenNumber: 1,
+        totalTokensIssued: 1,
+        avgWaitTimePerPatientMinutes: 6,
+        status: 'CALLING',
+        roomNumber: 'Room 101',
+        lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      };
+      queues.push(q);
+    } else {
+      q.totalTokensIssued += 1;
+      q.lastUpdated = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+
+    const tokenNumber = q.totalTokensIssued;
+    const tokenCode = `TK-${String(tokenNumber).padStart(2, '0')}`;
+    const ahead = Math.max(0, tokenNumber - q.currentTokenNumber);
+    const estimatedWaitMins = ahead * q.avgWaitTimePerPatientMinutes;
+
+    setLocal(STORAGE_KEYS.QUEUES, queues);
+
+    // Save offline token copy automatically for low connectivity guarantee
+    this.saveOfflineToken({
+      tokenCode,
+      tokenNumber,
+      hospitalId,
+      hospitalName: this.getHospitalById(hospitalId)?.name || 'Government Health Centre',
+      department,
+      patientName,
+      issuedAt: new Date().toISOString(),
+      roomNumber: q.roomNumber,
+      estimatedWaitMins
+    });
+
+    return { tokenNumber, tokenCode, estimatedWaitMins, roomNumber: q.roomNumber };
+  }
+
+  // High-Risk Patient Registry & Reminders
+  getHighRiskPatients(hospitalId?: string): HighRiskPatient[] {
+    const items = getLocal<HighRiskPatient[]>(STORAGE_KEYS.HIGH_RISK, INITIAL_HIGH_RISK_PATIENTS);
+    const existingIds = new Set(items.map((h) => h.id));
+    let updated = false;
+    for (const h of INITIAL_HIGH_RISK_PATIENTS) {
+      if (!existingIds.has(h.id)) {
+        items.push(h);
+        updated = true;
+      }
+    }
+    if (updated) {
+      setLocal(STORAGE_KEYS.HIGH_RISK, items);
+    }
+    if (hospitalId) {
+      return items.filter((h) => h.hospitalId === hospitalId);
+    }
+    return items;
+  }
+
+  sendHighRiskReminder(patientId: string): HighRiskPatient | undefined {
+    const list = this.getHighRiskPatients();
+    const idx = list.findIndex((h) => h.id === patientId);
+    if (idx !== -1) {
+      list[idx].reminderSent = true;
+      list[idx].reminderStatus = 'DELIVERED';
+      setLocal(STORAGE_KEYS.HIGH_RISK, list);
+      return list[idx];
+    }
+    return undefined;
+  }
+
+  addHighRiskPatient(
+    data: Omit<HighRiskPatient, 'id' | 'reminderSent' | 'reminderStatus'>
+  ): HighRiskPatient {
+    const list = this.getHighRiskPatients();
+    const newPatient: HighRiskPatient = {
+      ...data,
+      id: `hr-${Date.now()}`,
+      reminderSent: true,
+      reminderStatus: 'SENT'
+    };
+    list.unshift(newPatient);
+    setLocal(STORAGE_KEYS.HIGH_RISK, list);
+    return newPatient;
+  }
+
+  // Facility Quality Dashboard & Benchmarks
+  getQualityScores(): FacilityQualityScore[] {
+    const items = getLocal<FacilityQualityScore[]>(STORAGE_KEYS.QUALITY_SCORES, INITIAL_QUALITY_SCORES);
+    const existingIds = new Set(items.map((q) => q.hospitalId));
+    let updated = false;
+    for (const q of INITIAL_QUALITY_SCORES) {
+      if (!existingIds.has(q.hospitalId)) {
+        items.push(q);
+        updated = true;
+      }
+    }
+    if (updated) {
+      setLocal(STORAGE_KEYS.QUALITY_SCORES, items);
+    }
+    return items;
+  }
+
+  getQualityScoreByHospital(hospitalId: string): FacilityQualityScore | undefined {
+    const scores = this.getQualityScores();
+    return scores.find((s) => s.hospitalId === hospitalId);
+  }
+
+  // Emergency 108 Escalation
+  getEmergencies(): EmergencyIncident[] {
+    return getLocal<EmergencyIncident[]>(STORAGE_KEYS.EMERGENCIES, INITIAL_EMERGENCIES);
+  }
+
+  createEmergencySOS(incident: {
+    callerName: string;
+    callerPhone: string;
+    location: { lat: number; lng: number; address: string };
+    emergencyType: EmergencyIncident['emergencyType'];
+    targetHospitalId: string;
+    targetHospitalName: string;
+  }): EmergencyIncident {
+    const list = this.getEmergencies();
+    const randomAmbNum = Math.floor(1080 + Math.random() * 20);
+    const newIncident: EmergencyIncident = {
+      id: `emg-${Date.now()}`,
+      callerName: incident.callerName,
+      callerPhone: incident.callerPhone,
+      location: incident.location,
+      emergencyType: incident.emergencyType,
+      assignedAmbulanceId: `AMB-108-${randomAmbNum}`,
+      ambulanceVehicleNumber: `AP 16 TX ${randomAmbNum} (ALS ICU)`,
+      ambulanceDriverPhone: '+91 94401 10808',
+      etaMinutes: Math.floor(4 + Math.random() * 6), // 4 - 9 mins
+      targetHospitalId: incident.targetHospitalId,
+      targetHospitalName: incident.targetHospitalName,
+      traumaBedAlertDispatched: true,
+      status: 'DISPATCHED',
+      createdAt: new Date().toISOString()
+    };
+    list.unshift(newIncident);
+    setLocal(STORAGE_KEYS.EMERGENCIES, list);
+    return newIncident;
+  }
+
+  updateEmergencyStatus(
+    id: string,
+    status: EmergencyIncident['status']
+  ): EmergencyIncident | undefined {
+    const list = this.getEmergencies();
+    const idx = list.findIndex((e) => e.id === id);
+    if (idx !== -1) {
+      list[idx].status = status;
+      setLocal(STORAGE_KEYS.EMERGENCIES, list);
+      return list[idx];
+    }
+    return undefined;
+  }
+
+  // Low Connectivity / Offline Token Pass Caching
+  getOfflineTokens(): any[] {
+    return getLocal<any[]>(STORAGE_KEYS.OFFLINE_TOKENS, []);
+  }
+
+  saveOfflineToken(token: any): void {
+    const tokens = this.getOfflineTokens();
+    tokens.unshift(token);
+    // keep up to 10 recent tokens
+    setLocal(STORAGE_KEYS.OFFLINE_TOKENS, tokens.slice(0, 10));
+  }
+
   // Appointments
   getAppointments(hospitalId?: string, userId?: string): Appointment[] {
     let list = getLocal<Appointment[]>(STORAGE_KEYS.APPOINTMENTS, INITIAL_APPOINTMENTS);
@@ -727,28 +1701,14 @@ class ApiStore {
       throw new Error('Cannot book an appointment for a past date. Please select today or a future date.');
     }
 
-    // Slot collision check for same doctor
-    const slotConflict = list.some(
-      (a) =>
-        a.doctorId === data.doctorId &&
-        a.appointmentDate === data.appointmentDate &&
-        a.appointmentTime === data.appointmentTime &&
-        a.status !== 'CANCELLED'
-    );
-    if (slotConflict) {
-      throw new Error(`This time slot (${data.appointmentTime}) is already booked for ${doc.name}. Please select an alternate time slot.`);
-    }
-
-    // Duplicate appointment check for same patient with same doctor on same day
-    const patientDuplicate = list.some(
-      (a) =>
-        a.patientName.trim().toLowerCase() === data.patientName.trim().toLowerCase() &&
-        a.doctorId === data.doctorId &&
-        a.appointmentDate === data.appointmentDate &&
-        a.status !== 'CANCELLED'
-    );
-    if (patientDuplicate) {
-      throw new Error(`Patient ${data.patientName} already has an active appointment with ${doc.name} on ${data.appointmentDate}.`);
+    // Dynamic doctor working hours & capacity check (6 min average consultation = 10 slots/hr)
+    const slotAvailability = this.getSlotAvailability(data.doctorId, data.appointmentDate, data.appointmentTime);
+    if (slotAvailability.isFullyBooked) {
+      const nextSlot = this.getNextAvailableSlot(data.doctorId, data.appointmentDate, data.appointmentTime);
+      const nextSlotMsg = nextSlot
+        ? ` Next available time period is ${nextSlot}.`
+        : ' All slots for this doctor are fully booked on this date. Please select another date.';
+      throw new Error(`This time period (${data.appointmentTime}) is Fully Booked (${slotAvailability.totalCapacity}/${slotAvailability.totalCapacity} taken).${nextSlotMsg}`);
     }
 
     const randomNum = Math.floor(100000 + Math.random() * 900000);
@@ -778,6 +1738,22 @@ class ApiStore {
 
     list.unshift(newApt);
     setLocal(STORAGE_KEYS.APPOINTMENTS, list);
+
+    // Notify real-time listeners for instant reactive slot updates
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('healthcare-appointments-updated', {
+          detail: {
+            action: 'BOOKED',
+            appointment: newApt,
+            doctorId: newApt.doctorId,
+            appointmentDate: newApt.appointmentDate,
+            appointmentTime: newApt.appointmentTime
+          }
+        })
+      );
+    }
+
     // Persist to Firebase Firestore
     saveAppointmentToFirestore(newApt).catch((err) => {
       console.warn('Background sync to Firestore skipped:', err);
@@ -790,8 +1766,25 @@ class ApiStore {
     const idx = list.findIndex((a) => a.id === id || a.appointmentId === id);
     if (idx !== -1) {
       list[idx].status = status;
+      const updatedApt = list[idx];
       setLocal(STORAGE_KEYS.APPOINTMENTS, list);
-      return list[idx];
+
+      // Notify real-time listeners for instant slot count recovery upon cancellation
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('healthcare-appointments-updated', {
+            detail: {
+              action: status,
+              appointment: updatedApt,
+              doctorId: updatedApt.doctorId,
+              appointmentDate: updatedApt.appointmentDate,
+              appointmentTime: updatedApt.appointmentTime
+            }
+          })
+        );
+      }
+
+      return updatedApt;
     }
     return undefined;
   }
@@ -955,6 +1948,54 @@ class ApiStore {
       unavailableServices,
       medicineShortages
     };
+  }
+
+  getHospitalAdminStats(hospitalId: string) {
+    const hosp = this.getHospitalById(hospitalId);
+    const docs = this.getDoctors(hospitalId);
+    const srvs = this.getServices(hospitalId);
+    const meds = this.getMedicines(hospitalId);
+    const apts = this.getAppointments(hospitalId);
+    const cmps = this.getComplaints(hospitalId);
+
+    const availableDocs = docs.filter((d) => d.availabilityStatus === 'AVAILABLE').length;
+    const activeServices = srvs.filter((s) => s.available).length;
+    const lowStockMeds = meds.filter((m) => m.quantity <= m.minimumThreshold).length;
+    const outOfStockMeds = meds.filter((m) => m.quantity === 0).length;
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const todayApts = apts.filter((a) => a.appointmentDate === todayStr);
+    const confirmedApts = apts.filter((a) => a.status === 'CONFIRMED' || a.status === 'BOOKED');
+    const completedApts = apts.filter((a) => a.status === 'COMPLETED');
+    const cancelledApts = apts.filter((a) => a.status === 'CANCELLED');
+
+    return {
+      hospital: hosp,
+      totalDoctors: docs.length,
+      availableDoctors: availableDocs,
+      totalServices: srvs.length,
+      activeServices,
+      totalMedicines: meds.length,
+      lowStockMedicines: lowStockMeds,
+      outOfStockMedicines: outOfStockMeds,
+      totalAppointments: apts.length,
+      todayAppointments: todayApts.length,
+      confirmedAppointments: confirmedApts.length,
+      completedAppointments: completedApts.length,
+      cancelledAppointments: cancelledApts.length,
+      totalComplaints: cmps.length,
+      rating: hosp?.rating || 4.5
+    };
+  }
+
+  refreshAllData(): { timestamp: string; success: boolean } {
+    const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    setLocal('healthconnect_last_sync_timestamp', now);
+    return { timestamp: now, success: true };
+  }
+
+  getLastSyncTimestamp(): string {
+    return getLocal<string>('healthconnect_last_sync_timestamp', new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
   }
 }
 

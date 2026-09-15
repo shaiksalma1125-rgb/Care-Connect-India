@@ -49,6 +49,9 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
   const [pincode, setPincode] = useState('520002');
   const [hospitalId, setHospitalId] = useState(hospitals[0]?.id || '');
   const [adminKey, setAdminKey] = useState('');
+  const [isOnboardingNewHospital, setIsOnboardingNewHospital] = useState(false);
+  const [newHospitalName, setNewHospitalName] = useState('');
+  const [newHospitalType, setNewHospitalType] = useState<Hospital['hospitalType']>('Government Hospital');
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -121,9 +124,38 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
       return;
     }
 
-    if (role === 'ADMIN' && adminKey !== 'SIH2026') {
-      setError('Invalid Government Admin Code. Use demo code: SIH2026');
+    if ((role === 'ADMIN' || role === 'HOSPITAL_ADMIN') && adminKey && adminKey !== 'SIH2026' && adminKey !== 'HA2026') {
+      setError('Invalid Hospital Admin Secret Code. Use demo code: HA2026 or SIH2026');
       return;
+    }
+
+    let assignedHospId: string | undefined = undefined;
+    if (role === 'HOSPITAL_STAFF') {
+      assignedHospId = hospitalId;
+    } else if (role === 'HOSPITAL_ADMIN' || role === 'ADMIN') {
+      if (isOnboardingNewHospital) {
+        if (!newHospitalName.trim()) {
+          setError('Please enter the name of the new hospital to onboard.');
+          return;
+        }
+        const createdHosp = apiStore.saveHospital({
+          name: newHospitalName.trim(),
+          hospitalType: newHospitalType,
+          address: `${village.trim() || 'Hospital Main Road'}, ${mandal.trim() || 'Vijayawada'}`,
+          district,
+          state,
+          pincode,
+          phone,
+          emergencyPhone: '108 / 102',
+          openingHours: '24 Hours | OPD: 08:30 AM - 01:30 PM',
+          facilities: ['24x7 Emergency Casualty', 'General OPD', 'Jan Aushadhi Medical Store'],
+          emergencyAvailable: true,
+          isOpen: true
+        });
+        assignedHospId = createdHosp.id;
+      } else {
+        assignedHospId = hospitalId || hospitals[0]?.id;
+      }
     }
 
     setLoading(true);
@@ -140,7 +172,7 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
           location: `${village.trim() || 'Vijayawada'}, ${mandal.trim() || 'Vijayawada'}`,
           district,
           state,
-          hospitalId: role === 'HOSPITAL_STAFF' ? hospitalId : undefined
+          hospitalId: assignedHospId
         });
       } catch (fbErr: any) {
         console.warn('Firebase registration exception, saving locally:', fbErr);
@@ -152,7 +184,7 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
           location: `${village.trim() || 'Vijayawada'}, ${mandal.trim() || 'Vijayawada'}`,
           district,
           state,
-          hospitalId: role === 'HOSPITAL_STAFF' ? hospitalId : undefined
+          hospitalId: assignedHospId
         });
       }
 
@@ -261,14 +293,14 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
                   </button>
                   <button
                     type="button"
-                    onClick={() => setRole('ADMIN')}
+                    onClick={() => setRole('HOSPITAL_ADMIN')}
                     className={`py-2 px-1 rounded-xl border text-center text-xs font-semibold transition-all ${
-                      role === 'ADMIN'
+                      role === 'HOSPITAL_ADMIN' || role === 'ADMIN'
                         ? 'border-blue-600 bg-blue-50 text-blue-700 shadow-xs'
                         : 'border-slate-200 text-slate-600 hover:bg-slate-50'
                     }`}
                   >
-                    Govt Admin
+                    Hospital Admin
                   </button>
                 </div>
               </div>
@@ -277,8 +309,8 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
                 <label className="block font-semibold text-slate-700 mb-1">
                   {role === 'HOSPITAL_STAFF'
                     ? 'Official Hospital Email / Staff ID *'
-                    : role === 'ADMIN'
-                    ? 'Directorate Government Email *'
+                    : role === 'HOSPITAL_ADMIN' || role === 'ADMIN'
+                    ? 'Hospital Admin Official Email *'
                     : 'Registered Email or Mobile Number *'}
                 </label>
                 <div className="relative">
@@ -291,8 +323,8 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
                     placeholder={
                       role === 'HOSPITAL_STAFF'
                         ? 'staff@ggh.gov.in'
-                        : role === 'ADMIN'
-                        ? 'admin@mohfw.gov.in'
+                        : role === 'HOSPITAL_ADMIN' || role === 'ADMIN'
+                        ? 'admin.ggh@hospital.gov.in'
                         : 'e.g. citizen@healthcare.gov.in or 9848022334'
                     }
                     className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 font-medium text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-500 shadow-xs"
@@ -319,7 +351,8 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
                 <span className="font-semibold text-slate-700 block">Authoritative Testing Accounts:</span>
                 <p>• Citizen: <span className="font-mono text-slate-800">citizen@healthcare.gov.in</span> / <span className="font-mono text-slate-800">password123</span></p>
                 <p>• Hospital Staff: <span className="font-mono text-slate-800">staff@ggh.gov.in</span> / <span className="font-mono text-slate-800">password123</span></p>
-                <p>• Govt Admin: <span className="font-mono text-slate-800">admin@mohfw.gov.in</span> / <span className="font-mono text-slate-800">password123</span></p>
+                <p>• Hospital Admin (GGH): <span className="font-mono text-slate-800">admin.ggh@hospital.gov.in</span> / <span className="font-mono text-slate-800">password123</span></p>
+                <p>• Hospital Admin (CHC): <span className="font-mono text-slate-800">admin.chc@hospital.gov.in</span> / <span className="font-mono text-slate-800">password123</span></p>
               </div>
 
               <button
@@ -379,18 +412,18 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Account Role *</label>
                 <div className="grid grid-cols-3 gap-2">
-                  {(['CITIZEN', 'HOSPITAL_STAFF', 'ADMIN'] as UserRole[]).map((r) => (
+                  {(['CITIZEN', 'HOSPITAL_STAFF', 'HOSPITAL_ADMIN'] as UserRole[]).map((r) => (
                     <button
                       key={r}
                       type="button"
                       onClick={() => setRole(r)}
                       className={`p-2 rounded-xl border font-bold text-[11px] transition-all ${
-                        role === r
+                        role === r || (r === 'HOSPITAL_ADMIN' && role === 'ADMIN')
                           ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
                           : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
                       }`}
                     >
-                      {r === 'CITIZEN' ? 'Citizen' : r === 'HOSPITAL_STAFF' ? 'Staff' : 'Admin'}
+                      {r === 'CITIZEN' ? 'Citizen' : r === 'HOSPITAL_STAFF' ? 'Staff' : 'Hospital Admin'}
                     </button>
                   ))}
                 </div>
@@ -522,18 +555,95 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
                 </div>
               )}
 
-              {role === 'ADMIN' && (
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">
-                    Government Admin Secret Code *
-                  </label>
-                  <input
-                    type="password"
-                    value={adminKey}
-                    onChange={(e) => setAdminKey(e.target.value)}
-                    placeholder="Enter code (Demo code: SIH2026)"
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 font-mono text-slate-800 shadow-xs focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
-                  />
+              {(role === 'HOSPITAL_ADMIN' || role === 'ADMIN') && (
+                <div className="space-y-3 p-3 bg-blue-50/60 rounded-2xl border border-blue-200">
+                  <div>
+                    <label className="block font-bold text-slate-800 mb-1">
+                      Designated Hospital Facility to Administer *
+                    </label>
+                    <p className="text-[11px] text-slate-500 mb-2">
+                      Each Hospital Admin manages their own specific hospital's doctors, services, beds, and medicines.
+                    </p>
+                    
+                    <div className="flex gap-2 mb-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsOnboardingNewHospital(false)}
+                        className={`flex-1 py-1.5 px-2 rounded-lg text-[11px] font-bold border transition-colors ${
+                          !isOnboardingNewHospital
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                            : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        Select Existing Hospital
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsOnboardingNewHospital(true)}
+                        className={`flex-1 py-1.5 px-2 rounded-lg text-[11px] font-bold border transition-colors ${
+                          isOnboardingNewHospital
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                            : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        + Onboard New Hospital
+                      </button>
+                    </div>
+
+                    {!isOnboardingNewHospital ? (
+                      <select
+                        value={hospitalId}
+                        onChange={(e) => setHospitalId(e.target.value)}
+                        className="w-full p-2.5 rounded-xl border border-slate-200 font-semibold text-slate-800 bg-white shadow-xs focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                      >
+                        {hospitals.map((h) => (
+                          <option key={h.id} value={h.id}>
+                            {h.name} ({h.hospitalType})
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div className="space-y-2">
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">New Hospital Facility Name *</label>
+                          <input
+                            type="text"
+                            value={newHospitalName}
+                            onChange={(e) => setNewHospitalName(e.target.value)}
+                            placeholder="e.g. Civil Hospital, Poranki"
+                            className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-800 font-medium text-xs focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">Hospital Type *</label>
+                          <select
+                            value={newHospitalType}
+                            onChange={(e) => setNewHospitalType(e.target.value as any)}
+                            className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-800 font-medium text-xs focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                          >
+                            <option value="Government Hospital">Government General Hospital</option>
+                            <option value="District Hospital">District Hospital</option>
+                            <option value="Community Health Centre (CHC)">Community Health Centre (CHC)</option>
+                            <option value="Primary Health Centre (PHC)">Primary Health Centre (PHC)</option>
+                            <option value="Area Hospital">Area Hospital</option>
+                          </select>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">
+                      Hospital Admin Clearance Secret Code *
+                    </label>
+                    <input
+                      type="password"
+                      value={adminKey}
+                      onChange={(e) => setAdminKey(e.target.value)}
+                      placeholder="Enter verification code (Demo: HA2026 or SIH2026)"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 font-mono text-slate-800 shadow-xs focus:ring-2 focus:ring-blue-500 focus:outline-hidden bg-white"
+                    />
+                  </div>
                 </div>
               )}
 

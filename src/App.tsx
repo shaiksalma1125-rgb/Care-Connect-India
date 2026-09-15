@@ -13,6 +13,16 @@ import { ComplaintView } from './components/views/ComplaintView';
 import { FeedbackView } from './components/views/FeedbackView';
 import { StaffDashboardView } from './components/views/StaffDashboardView';
 import { AdminDashboardView } from './components/views/AdminDashboardView';
+import { TeleconsultationView } from './components/views/TeleconsultationView';
+import { DigitalTriageView } from './components/views/DigitalTriageView';
+import { PatientHealthRecordsView } from './components/views/PatientHealthRecordsView';
+import { ReferralTrackingView } from './components/views/ReferralTrackingView';
+import { DiagnosticServicesView } from './components/views/DiagnosticServicesView';
+import { AppointmentQueueView } from './components/views/AppointmentQueueView';
+import { HighRiskFollowUpView } from './components/views/HighRiskFollowUpView';
+import { FacilityQualityDashboardView } from './components/views/FacilityQualityDashboardView';
+import { LowConnectivityBanner } from './components/LowConnectivityBanner';
+import { EmergencyEscalationModal } from './components/EmergencyEscalationModal';
 import { AuthModals } from './components/views/AuthModals';
 import { testFirebaseConnection } from './services/firebase';
 import {
@@ -33,25 +43,67 @@ export default function App() {
   const [fontScale, setFontScale] = useState<number>(100);
 
   // Navigation State
-  const [currentView, setCurrentView] = useState<string>('home');
+  const [currentView, setCurrentView] = useState<string>(() => {
+    const initialUser = apiStore.getCurrentUser();
+    if (initialUser?.role === 'HOSPITAL_STAFF') return 'staff-dashboard';
+    if (initialUser?.role === 'ADMIN' || initialUser?.role === 'HOSPITAL_ADMIN') return 'admin-dashboard';
+    return 'home';
+  });
   const [viewPayload, setViewPayload] = useState<any>({});
 
   // Auth modal state
   const [authModalOpen, setAuthModalOpen] = useState<boolean>(false);
   const [authModalMode, setAuthModalMode] = useState<'login' | 'register'>('login');
 
+  // Emergency SOS Modal state
+  const [emergencyModalOpen, setEmergencyModalOpen] = useState<boolean>(false);
+  const [emergencySymptom, setEmergencySymptom] = useState<string>('');
+
+  // Global Dashboard & Telemetry Refresh State
+  const [globalRefreshKey, setGlobalRefreshKey] = useState<number>(0);
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const [refreshNotification, setRefreshNotification] = useState<string | null>(null);
+  const [lastRefreshedText, setLastRefreshedText] = useState<string>(() => apiStore.getLastSyncTimestamp());
+
+  const handleRefreshAllDashboards = () => {
+    setIsRefreshing(true);
+    const { timestamp } = apiStore.refreshAllData();
+    setLastRefreshedText(timestamp);
+    setGlobalRefreshKey((prev) => prev + 1);
+    setRefreshNotification(`All Dashboards Synchronized: Live OPD queues, hospital telemetry, doctor duty rosters, and bed counts refreshed at ${timestamp}.`);
+
+    setTimeout(() => {
+      setIsRefreshing(false);
+    }, 600);
+
+    setTimeout(() => {
+      setRefreshNotification(null);
+    }, 4500);
+  };
+
+  const handleOpenEmergencySOS = (symptom?: string) => {
+    setEmergencySymptom(symptom || '');
+    setEmergencyModalOpen(true);
+  };
+
   // GPS User Location State (Default: Vijayawada reference center)
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [locating, setLocating] = useState<boolean>(false);
 
   // Auto-route staff/admin to their dashboards on login
+  const prevUserIdRef = React.useRef<string | null>(currentUser?.id || null);
   useEffect(() => {
-    if (currentUser?.role === 'HOSPITAL_STAFF' && currentView === 'home') {
-      setCurrentView('staff-dashboard');
-    } else if (currentUser?.role === 'ADMIN' && currentView === 'home') {
-      setCurrentView('admin-dashboard');
+    const prevId = prevUserIdRef.current;
+    const currentId = currentUser?.id || null;
+    if (prevId !== currentId) {
+      prevUserIdRef.current = currentId;
+      if (currentUser?.role === 'HOSPITAL_STAFF' && currentView === 'home') {
+        setCurrentView('staff-dashboard');
+      } else if ((currentUser?.role === 'ADMIN' || currentUser?.role === 'HOSPITAL_ADMIN') && currentView === 'home') {
+        setCurrentView('admin-dashboard');
+      }
     }
-  }, [currentUser]);
+  }, [currentUser?.id, currentUser?.role, currentView]);
 
   // Haversine distance calculator
   const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
@@ -122,7 +174,7 @@ export default function App() {
         distance: calculateDistance(userCoords.lat, userCoords.lng, h.latitude, h.longitude)
       }))
       .sort((a, b) => (a.distance || 0) - (b.distance || 0));
-  }, [userCoords]);
+  }, [userCoords, globalRefreshKey]);
 
   const handleNavigate = (view: string, payload?: any) => {
     if (view === 'login') {
@@ -135,10 +187,15 @@ export default function App() {
       setAuthModalOpen(true);
       return;
     }
+    if (view === 'emergency' || view === 'sos') {
+      setEmergencySymptom(payload?.symptom || '');
+      setEmergencyModalOpen(true);
+      return;
+    }
     if (view === 'profile') {
       if (currentUser?.role === 'HOSPITAL_STAFF') {
         setCurrentView('staff-dashboard');
-      } else if (currentUser?.role === 'ADMIN') {
+      } else if (currentUser?.role === 'ADMIN' || currentUser?.role === 'HOSPITAL_ADMIN') {
         setCurrentView('admin-dashboard');
       } else {
         setCurrentView('my-appointments');
@@ -167,7 +224,7 @@ export default function App() {
     setCurrentUser(user);
     if (role === 'HOSPITAL_STAFF') {
       setCurrentView('staff-dashboard');
-    } else if (role === 'ADMIN') {
+    } else if (role === 'ADMIN' || role === 'HOSPITAL_ADMIN') {
       setCurrentView('admin-dashboard');
     } else {
       setCurrentView('home');
@@ -184,7 +241,7 @@ export default function App() {
 
   return (
     <div
-      className={`min-h-screen flex flex-col font-sans transition-colors ${
+      className={`min-h-screen flex flex-col font-sans transition-colors overflow-x-hidden w-full max-w-full ${
         highContrast ? 'bg-black text-white high-contrast' : 'bg-[#F8FAFC] text-slate-800'
       }`}
       style={{ fontSize: `${fontScale}%` }}
@@ -201,6 +258,7 @@ export default function App() {
         onToggleHighContrast={() => setHighContrast((prev) => !prev)}
         fontScale={fontScale}
         onChangeFontScale={handleFontScaleChange}
+        onOpenEmergencySOS={() => handleOpenEmergencySOS()}
         onOpenLogin={() => {
           setAuthModalMode('login');
           setAuthModalOpen(true);
@@ -212,10 +270,42 @@ export default function App() {
         onLogout={handleLogout}
         onSwitchRole={handleAuthRoleSwitch}
         onSwitchRoleQuick={handleAuthRoleSwitch}
+        onRefreshAll={handleRefreshAllDashboards}
+        isRefreshing={isRefreshing}
+        lastRefreshedText={lastRefreshedText}
       />
 
       {/* Main App Body */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-12 overflow-x-hidden">
+        {/* Global Refresh Live Notification Banner */}
+        {refreshNotification && (
+          <div
+            id="global-refresh-alert"
+            className="mb-4 p-3.5 bg-emerald-50 border border-emerald-300 rounded-2xl text-emerald-900 text-xs font-semibold flex items-center justify-between shadow-xs animate-in fade-in slide-in-from-top-2"
+          >
+            <div className="flex items-center gap-2.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>{refreshNotification}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setRefreshNotification(null)}
+              className="text-emerald-700 hover:text-emerald-900 p-1 cursor-pointer font-bold"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
+        {/* Low-Connectivity & Offline OPD Mode Banner */}
+        <div className="mb-4">
+          <LowConnectivityBanner
+            language={language}
+            onNavigateToHospital={(hId) => handleNavigate('hospital-details', { hospitalId: hId })}
+          />
+        </div>
+
         {currentView === 'home' && (
           <HomeView
             hospitals={hospitalsWithDistance}
@@ -225,6 +315,9 @@ export default function App() {
             onNavigate={handleNavigate}
             language={language}
             currentUser={currentUser}
+            onOpenEmergencySOS={handleOpenEmergencySOS}
+            onRefreshAll={handleRefreshAllDashboards}
+            isRefreshing={isRefreshing}
           />
         )}
 
@@ -277,6 +370,8 @@ export default function App() {
             currentUser={currentUser}
             onNavigate={handleNavigate}
             language={language}
+            refreshKey={globalRefreshKey}
+            onRefresh={handleRefreshAllDashboards}
           />
         )}
 
@@ -298,11 +393,98 @@ export default function App() {
           />
         )}
 
+        {currentView === 'teleconsultation' && (
+          <TeleconsultationView
+            currentUser={currentUser}
+            onNavigate={handleNavigate}
+            language={language}
+            initialDoctorId={viewPayload.doctorId}
+            initialHospitalId={viewPayload.hospitalId}
+            initialSymptoms={viewPayload.symptoms}
+            initialPatientName={viewPayload.patientName}
+            initialPatientAge={viewPayload.patientAge}
+            initialVitals={viewPayload.vitals}
+            startImmediateCall={viewPayload.startImmediateCall}
+          />
+        )}
+
+        {currentView === 'triage' && (
+          <DigitalTriageView
+            currentUser={currentUser}
+            onNavigate={handleNavigate}
+            language={language}
+            onOpenEmergencySOS={handleOpenEmergencySOS}
+            onNavigateToHospital={(hospId) => handleNavigate('details', { hospitalId: hospId })}
+            onOpenEmergencyModal={(symp) => handleOpenEmergencySOS(symp)}
+            onNavigateToTeleconsult={(payload) => handleNavigate('teleconsultation', payload)}
+            onNavigateToQueue={(payload) => handleNavigate('queue', payload)}
+          />
+        )}
+
+        {currentView === 'health-records' && (
+          <PatientHealthRecordsView
+            currentUser={currentUser}
+            onNavigate={handleNavigate}
+            language={language}
+            initialPatientId={viewPayload.patientId}
+          />
+        )}
+
+        {currentView === 'referrals' && (
+          <ReferralTrackingView
+            currentUser={currentUser}
+            onNavigate={handleNavigate}
+            language={language}
+            onUserAuth={(user) => setCurrentUser(user)}
+          />
+        )}
+
+        {currentView === 'diagnostics' && (
+          <DiagnosticServicesView
+            currentUser={currentUser}
+            onNavigate={handleNavigate}
+            language={language}
+            initialHospitalId={viewPayload.hospitalId}
+          />
+        )}
+
+        {currentView === 'queue' && (
+          <AppointmentQueueView
+            currentUser={currentUser}
+            onNavigate={handleNavigate}
+            language={language}
+            initialHospitalId={viewPayload.hospitalId}
+            initialDoctorId={viewPayload.doctorId}
+            refreshKey={globalRefreshKey}
+            onRefresh={handleRefreshAllDashboards}
+          />
+        )}
+
+        {currentView === 'high-risk' && (
+          <HighRiskFollowUpView
+            currentUser={currentUser}
+            onNavigate={handleNavigate}
+            language={language}
+          />
+        )}
+
+        {currentView === 'quality-dashboard' && (
+          <FacilityQualityDashboardView
+            onNavigate={handleNavigate}
+            language={language}
+            userCoords={userCoords}
+            refreshKey={globalRefreshKey}
+            onRefresh={handleRefreshAllDashboards}
+          />
+        )}
+
         {currentView === 'staff-dashboard' && (
           <StaffDashboardView
             currentUser={currentUser}
             onNavigate={handleNavigate}
             language={language}
+            refreshKey={globalRefreshKey}
+            onRefresh={handleRefreshAllDashboards}
           />
         )}
 
@@ -311,6 +493,9 @@ export default function App() {
             currentUser={currentUser}
             onNavigate={handleNavigate}
             language={language}
+            onUserAuth={(user) => setCurrentUser(user)}
+            refreshKey={globalRefreshKey}
+            onRefresh={handleRefreshAllDashboards}
           />
         )}
       </main>
@@ -415,6 +600,20 @@ export default function App() {
           } else if (user.role === 'ADMIN') {
             setCurrentView('admin-dashboard');
           }
+        }}
+      />
+
+      {/* 108 Emergency Ambulance Escalation Modal */}
+      <EmergencyEscalationModal
+        isOpen={emergencyModalOpen}
+        onClose={() => setEmergencyModalOpen(false)}
+        language={language}
+        currentUser={currentUser}
+        userCoords={userCoords}
+        initialSymptom={emergencySymptom}
+        onNavigateToHospital={(hId) => {
+          setEmergencyModalOpen(false);
+          handleNavigate('hospital-details', { hospitalId: hId });
         }}
       />
     </div>

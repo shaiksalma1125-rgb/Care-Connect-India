@@ -1,4 +1,4 @@
-export type UserRole = 'CITIZEN' | 'HOSPITAL_STAFF' | 'ADMIN';
+export type UserRole = 'CITIZEN' | 'HOSPITAL_STAFF' | 'HOSPITAL_ADMIN' | 'ADMIN';
 
 export interface User {
   id: string;
@@ -9,7 +9,7 @@ export interface User {
   location: string;
   district: string;
   state: string;
-  hospitalId?: string; // For HOSPITAL_STAFF
+  hospitalId?: string; // Connected hospital for HOSPITAL_ADMIN and HOSPITAL_STAFF
   createdAt: string;
 }
 
@@ -59,6 +59,8 @@ export interface Doctor {
   photoUrl?: string;
   availableDays: string[];
   timeSlots: string[];
+  workingHours?: { start: string; end: string };
+  consultationDurationMinutes?: number;
 }
 
 export interface ServiceItem {
@@ -175,3 +177,217 @@ export interface Complaint {
 }
 
 export type LanguageCode = 'en' | 'te' | 'hi';
+
+export interface Teleconsultation {
+  id: string;
+  teleconsultId: string; // e.g. TC-2026-8921
+  patientName: string;
+  patientPhone: string;
+  patientAge: number;
+  patientGender: string;
+  assistedByAsha: boolean;
+  ashaWorkerName?: string;
+  ashaWorkerPhone?: string;
+  hospitalId: string;
+  hospitalName: string;
+  doctorId: string;
+  doctorName: string;
+  doctorSpecialization: string;
+  symptoms: string;
+  vitals: {
+    bp?: string;
+    bloodPressure?: string;
+    pulse?: number;
+    pulseRate?: number | string;
+    temp?: number;
+    spO2?: number;
+    bloodSugar?: number;
+  };
+  status: 'WAITING' | 'IN_CALL' | 'COMPLETED' | 'CANCELLED';
+  prescription?: {
+    diagnosis: string;
+    medicines: Array<{ name: string; dosage: string; duration: string; janAushadhiAvailable?: boolean }>;
+    advice: string;
+    instructions?: string;
+    issuedBy?: string;
+  };
+  scheduledTime: string;
+  createdAt: string;
+}
+
+export type TriageUrgency = 'RED' | 'ORANGE' | 'YELLOW' | 'GREEN';
+
+export interface TriageAssessment {
+  id: string;
+  patientName: string;
+  patientAge?: number;
+  urgencyLevel: TriageUrgency;
+  primarySymptom: string;
+  symptoms?: string[];
+  symptomsList: string[];
+  vitals: {
+    bp?: string;
+    pulse?: number | string;
+    pulseRate?: number | string;
+    temp?: number | string;
+    temperature?: number | string;
+    spO2?: number | string;
+    spo2?: number | string;
+  };
+  recommendedFacilityType: string;
+  actionAdvice: string;
+  recommendedAction?: string;
+  emergencyEscalated: boolean;
+  createdAt: string;
+}
+
+export interface HealthRecord {
+  id: string;
+  userId: string;
+  abhaNumber: string; // e.g. 91-2026-8812-4029
+  abhaAddress: string; // e.g. salma@abdm
+  recordType: 'PRESCRIPTION' | 'DIAGNOSTIC_REPORT' | 'VITAL_LOG' | 'IMMUNIZATION' | 'DISCHARGE_SUMMARY';
+  title: string;
+  facilityName: string;
+  doctorName?: string;
+  date: string;
+  summary: string;
+  details?: Record<string, any>;
+  fileUrl?: string;
+}
+
+export type ReferralStatus =
+  | 'Pending'
+  | 'Accepted'
+  | 'In Progress'
+  | 'Completed'
+  | 'Rejected'
+  | 'INITIATED'
+  | 'ACCEPTED'
+  | 'EN_ROUTE'
+  | 'ADMITTED'
+  | 'COMPLETED'
+  | 'REJECTED';
+
+export interface PatientReferral {
+  id: string;
+  referralId: string; // e.g. REF-2026-NTR-0842
+  patientId?: string;
+  patientName: string;
+  patientAge: number;
+  patientGender: string;
+  patientPhone: string;
+  patientEmail?: string;
+  fromHospitalId: string;
+  fromHospitalName: string;
+  toHospitalId: string;
+  toHospitalName: string;
+  department: string;
+  doctorName?: string;
+  specialist?: string;
+  referredByDoctor?: string;
+  doctorSpecialist?: string;
+  reason: string;
+  referralReason?: string;
+  clinicalSummary?: string;
+  priority: 'EMERGENCY' | 'URGENT' | 'ROUTINE';
+  transportRequired: '108_AMBULANCE' | 'GOVT_PATIENT_VAN' | 'SELF_TRANSPORT' | string;
+  transportMode?: string;
+  status: ReferralStatus;
+  referralDate: string;
+  qrCodeToken: string;
+  notes?: string;
+  updatedAt?: string;
+}
+
+export interface DiagnosticService {
+  id: string;
+  hospitalId: string;
+  name: string;
+  category: 'Biochemistry' | 'Radiology' | 'Pathology' | 'Microbiology' | 'Cardiology';
+  equipmentStatus: 'OPERATIONAL' | 'CALIBRATION' | 'MAINTENANCE';
+  sampleTimings: string;
+  reportTurnaroundHours: number;
+  isFreeUnderNHM: boolean;
+  price: number;
+  slotsAvailableToday: number;
+  nextAvailableSlot: string;
+}
+
+export interface OPDQueueInfo {
+  id: string;
+  hospitalId: string;
+  department: string;
+  doctorName: string;
+  currentServingToken: string;
+  currentTokenNumber: number;
+  totalTokensIssued: number;
+  avgWaitTimePerPatientMinutes: number;
+  status: 'CALLING' | 'CONSULTING' | 'LUNCH_BREAK' | 'CLOSED';
+  roomNumber: string;
+  lastUpdated: string;
+}
+
+export interface HighRiskPatient {
+  id: string;
+  patientName: string;
+  age?: number;
+  patientAge?: number;
+  gender?: string;
+  phone?: string;
+  patientPhone?: string;
+  hospitalId: string;
+  hospitalName: string;
+  village?: string;
+  conditionType?: 'HIGH_RISK_PREGNANCY' | 'SEVERE_HYPERTENSION' | 'UNCONTROLLED_DIABETES' | 'INFANT_MALNUTRITION' | string;
+  riskType?: string;
+  condition?: string;
+  riskLevel: 'CRITICAL' | 'HIGH' | 'MODERATE';
+  lastCheckupDate?: string;
+  nextFollowUpDueDate?: string;
+  nextFollowUpDate?: string;
+  ashaWorker?: string;
+  ashaWorkerName?: string;
+  ashaPhone?: string;
+  ashaWorkerPhone?: string;
+  reminderSent: boolean;
+  reminderStatus: 'SENT' | 'DELIVERED' | 'ACKNOWLEDGED' | 'MISSED';
+  lastVitalsRecorded?: string;
+  followUpActionNotes?: string;
+  notes?: string;
+}
+
+export interface EmergencyIncident {
+  id: string;
+  callerName: string;
+  callerPhone: string;
+  location: {
+    lat: number;
+    lng: number;
+    address: string;
+  };
+  emergencyType: 'CARDIAC_ARREST' | 'TRAUMA_ROAD_ACCIDENT' | 'STROKE' | 'SEVERE_RESPIRATORY' | 'MATERNAL_EMERGENCY';
+  assignedAmbulanceId: string;
+  ambulanceVehicleNumber: string;
+  ambulanceDriverPhone: string;
+  etaMinutes: number;
+  targetHospitalId: string;
+  targetHospitalName: string;
+  traumaBedAlertDispatched: boolean;
+  status: 'DISPATCHED' | 'EN_ROUTE' | 'ON_SCENE' | 'TRANSPORTING' | 'REACHED_HOSPITAL';
+  createdAt: string;
+}
+
+export interface FacilityQualityScore {
+  hospitalId: string;
+  hospitalName: string;
+  kayakalpScore: number; // e.g. 92/100
+  nqasCertified: boolean;
+  opdAvgWaitMins: number;
+  medicineAvailabilityPercent: number;
+  diagnosticUptimePercent: number;
+  cleanlinessIndex: number; // 1-5
+  doctorPresenceIndex: number; // 1-5
+  citizenResolutionPercent: number;
+  lastAuditDate: string;
+}

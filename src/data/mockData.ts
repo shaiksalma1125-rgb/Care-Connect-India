@@ -6,7 +6,16 @@ import {
   User,
   Appointment,
   Feedback,
-  Complaint
+  Complaint,
+  Teleconsultation,
+  TriageAssessment,
+  HealthRecord,
+  PatientReferral,
+  DiagnosticService,
+  OPDQueueInfo,
+  HighRiskPatient,
+  FacilityQualityScore,
+  EmergencyIncident
 } from '../types';
 
 export const DEMO_USERS: User[] = [
@@ -33,6 +42,28 @@ export const DEMO_USERS: User[] = [
     createdAt: '2026-01-10T08:30:00Z'
   },
   {
+    id: 'user-citizen-a',
+    name: 'Citizen A (Ananya Sharma)',
+    email: 'citizena@healthcare.gov.in',
+    mobile: '9849221101',
+    role: 'CITIZEN',
+    location: 'Vijayawada Central',
+    district: 'NTR District',
+    state: 'Andhra Pradesh',
+    createdAt: '2026-02-15T09:00:00Z'
+  },
+  {
+    id: 'user-citizen-b',
+    name: 'Citizen B (Bhavani Prasad)',
+    email: 'citizenb@healthcare.gov.in',
+    mobile: '9849332202',
+    role: 'CITIZEN',
+    location: 'Machilipatnam Coastal Area',
+    district: 'Krishna District',
+    state: 'Andhra Pradesh',
+    createdAt: '2026-02-20T11:00:00Z'
+  },
+  {
     id: 'user-staff-1',
     name: 'Dr. S. Anitha (Medical Officer)',
     email: 'staff@ggh.gov.in',
@@ -45,15 +76,76 @@ export const DEMO_USERS: User[] = [
     createdAt: '2025-11-15T09:00:00Z'
   },
   {
-    id: 'user-admin-1',
-    name: 'Dr. V. K. Narayana (Director of Public Health)',
-    email: 'admin@mohfw.gov.in',
+    id: 'user-admin-ggh',
+    name: 'Dr. V. K. Narayana (Hospital Admin - GGH)',
+    email: 'admin.ggh@hospital.gov.in',
     mobile: '9121004455',
-    role: 'ADMIN',
-    location: 'State Health Command Centre',
-    district: 'Vijayawada Central',
+    role: 'HOSPITAL_ADMIN',
+    location: 'GGH Hospital Administration Block, Vijayawada',
+    district: 'NTR District',
     state: 'Andhra Pradesh',
+    hospitalId: 'hosp-1',
     createdAt: '2025-08-01T10:00:00Z'
+  },
+  {
+    id: 'user-admin-chc',
+    name: 'Dr. Ramesh Babu (Hospital Admin - CHC)',
+    email: 'admin.chc@hospital.gov.in',
+    mobile: '9440223344',
+    role: 'HOSPITAL_ADMIN',
+    location: 'Gannavaram CHC Administration Office',
+    district: 'Krishna District',
+    state: 'Andhra Pradesh',
+    hospitalId: 'hosp-2',
+    createdAt: '2025-09-10T10:00:00Z'
+  },
+  {
+    id: 'user-admin-phc',
+    name: 'Dr. Lalitha Devi (Hospital Admin - PHC)',
+    email: 'admin.phc@hospital.gov.in',
+    mobile: '9440334455',
+    role: 'HOSPITAL_ADMIN',
+    location: 'Vuyyuru PHC Administrative Section',
+    district: 'Krishna District',
+    state: 'Andhra Pradesh',
+    hospitalId: 'hosp-3',
+    createdAt: '2025-10-05T10:00:00Z'
+  },
+  {
+    id: 'user-admin-1',
+    name: 'Dr. V. K. Narayana (Hospital Admin - GGH)',
+    email: 'admin.ggh@hospital.gov.in',
+    mobile: '9121004455',
+    role: 'HOSPITAL_ADMIN',
+    location: 'GGH Hospital Administration',
+    district: 'NTR District',
+    state: 'Andhra Pradesh',
+    hospitalId: 'hosp-1',
+    createdAt: '2025-08-01T10:00:00Z'
+  },
+  {
+    id: 'user-admin-2',
+    name: 'Dr. Sunita Rao (Hospital Admin - CHC Mangalagiri)',
+    email: 'admin.chc@hospital.gov.in',
+    mobile: '9121004456',
+    role: 'HOSPITAL_ADMIN',
+    location: 'CHC Administration Block',
+    district: 'Guntur',
+    state: 'Andhra Pradesh',
+    hospitalId: 'hosp-2',
+    createdAt: '2025-08-10T10:00:00Z'
+  },
+  {
+    id: 'user-admin-3',
+    name: 'Dr. T. Ramesh (Hospital Admin - PHC Kankipadu)',
+    email: 'admin.phc@hospital.gov.in',
+    mobile: '9121004457',
+    role: 'HOSPITAL_ADMIN',
+    location: 'PHC Superintendent Office',
+    district: 'Krishna',
+    state: 'Andhra Pradesh',
+    hospitalId: 'hosp-3',
+    createdAt: '2025-08-15T10:00:00Z'
   }
 ];
 
@@ -1109,5 +1201,658 @@ export const INITIAL_COMPLAINTS: Complaint[] = [
     resolutionRemarks: 'Staff officer reviewing queue metrics to deploy 2 additional biometric counters.',
     createdAt: '2026-02-27T11:45:00Z',
     updatedAt: '2026-02-28T09:00:00Z'
+  }
+];
+
+export const INITIAL_DIAGNOSTICS: DiagnosticService[] = [
+  {
+    id: 'diag-1',
+    hospitalId: 'hosp-1',
+    name: 'Complete Blood Picture (CBC / Hemogram)',
+    category: 'Pathology',
+    equipmentStatus: 'OPERATIONAL',
+    sampleTimings: '08:00 AM - 02:00 PM (Emergency 24x7)',
+    reportTurnaroundHours: 2,
+    isFreeUnderNHM: true,
+    price: 0,
+    slotsAvailableToday: 42,
+    nextAvailableSlot: 'Today, 11:30 AM'
+  },
+  {
+    id: 'diag-2',
+    hospitalId: 'hosp-1',
+    name: 'Digital Chest X-Ray (PA View)',
+    category: 'Radiology',
+    equipmentStatus: 'OPERATIONAL',
+    sampleTimings: '08:30 AM - 03:30 PM (Casualty 24x7)',
+    reportTurnaroundHours: 1,
+    isFreeUnderNHM: true,
+    price: 0,
+    slotsAvailableToday: 28,
+    nextAvailableSlot: 'Today, 12:00 PM'
+  },
+  {
+    id: 'diag-3',
+    hospitalId: 'hosp-1',
+    name: '128-Slice Spiral CT Scan (Brain / Abdomen)',
+    category: 'Radiology',
+    equipmentStatus: 'OPERATIONAL',
+    sampleTimings: '24 Hours Emergency & Scheduled OPD',
+    reportTurnaroundHours: 3,
+    isFreeUnderNHM: true,
+    price: 0,
+    slotsAvailableToday: 14,
+    nextAvailableSlot: 'Today, 02:15 PM'
+  },
+  {
+    id: 'diag-4',
+    hospitalId: 'hosp-1',
+    name: '12-Lead Computerized Electrocardiogram (ECG)',
+    category: 'Cardiology',
+    equipmentStatus: 'OPERATIONAL',
+    sampleTimings: '24 Hours Emergency Casualty',
+    reportTurnaroundHours: 1,
+    isFreeUnderNHM: true,
+    price: 0,
+    slotsAvailableToday: 55,
+    nextAvailableSlot: 'Immediate (No appointment required)'
+  },
+  {
+    id: 'diag-5',
+    hospitalId: 'hosp-1',
+    name: 'Ultrasound / Color Doppler (Obstetric & Pelvic)',
+    category: 'Radiology',
+    equipmentStatus: 'OPERATIONAL',
+    sampleTimings: '09:00 AM - 01:30 PM',
+    reportTurnaroundHours: 1,
+    isFreeUnderNHM: true,
+    price: 0,
+    slotsAvailableToday: 8,
+    nextAvailableSlot: 'Tomorrow, 09:30 AM'
+  },
+  {
+    id: 'diag-6',
+    hospitalId: 'hosp-1',
+    name: 'HbA1c & Fasting Blood Sugar Glycated Profile',
+    category: 'Biochemistry',
+    equipmentStatus: 'OPERATIONAL',
+    sampleTimings: '07:30 AM - 11:30 AM',
+    reportTurnaroundHours: 4,
+    isFreeUnderNHM: true,
+    price: 0,
+    slotsAvailableToday: 35,
+    nextAvailableSlot: 'Tomorrow, 08:00 AM'
+  },
+  {
+    id: 'diag-7',
+    hospitalId: 'hosp-2',
+    name: 'Complete Blood Picture (CBC)',
+    category: 'Pathology',
+    equipmentStatus: 'OPERATIONAL',
+    sampleTimings: '08:30 AM - 01:00 PM',
+    reportTurnaroundHours: 2,
+    isFreeUnderNHM: true,
+    price: 0,
+    slotsAvailableToday: 20,
+    nextAvailableSlot: 'Today, 11:45 AM'
+  },
+  {
+    id: 'diag-8',
+    hospitalId: 'hosp-2',
+    name: 'Basic Digital X-Ray (Chest / Extremities)',
+    category: 'Radiology',
+    equipmentStatus: 'OPERATIONAL',
+    sampleTimings: '09:00 AM - 01:30 PM',
+    reportTurnaroundHours: 2,
+    isFreeUnderNHM: true,
+    price: 0,
+    slotsAvailableToday: 15,
+    nextAvailableSlot: 'Today, 12:30 PM'
+  },
+  {
+    id: 'diag-9',
+    hospitalId: 'hosp-3',
+    name: 'Rapid Malaria & Dengue Antigen Test',
+    category: 'Microbiology',
+    equipmentStatus: 'OPERATIONAL',
+    sampleTimings: '09:00 AM - 03:00 PM',
+    reportTurnaroundHours: 1,
+    isFreeUnderNHM: true,
+    price: 0,
+    slotsAvailableToday: 30,
+    nextAvailableSlot: 'Immediate (Walk-in available)'
+  },
+  {
+    id: 'diag-10',
+    hospitalId: 'hosp-4',
+    name: 'Diagnostic Ultrasonography (USG Whole Abdomen)',
+    category: 'Radiology',
+    equipmentStatus: 'OPERATIONAL',
+    sampleTimings: '09:00 AM - 02:00 PM',
+    reportTurnaroundHours: 1,
+    isFreeUnderNHM: true,
+    price: 0,
+    slotsAvailableToday: 12,
+    nextAvailableSlot: 'Today, 01:15 PM'
+  }
+];
+
+export const INITIAL_TELECONSULTATIONS: Teleconsultation[] = [
+  {
+    id: 'tc-1',
+    teleconsultId: 'TC-2026-8921',
+    patientName: 'Shaik Salma',
+    patientPhone: '9849112501',
+    patientAge: 26,
+    patientGender: 'Female',
+    assistedByAsha: true,
+    ashaWorkerName: 'K. Mary (ASHA Worker, Ward 14)',
+    ashaWorkerPhone: '9440188771',
+    hospitalId: 'hosp-1',
+    hospitalName: 'Government General Hospital (GGH), Vijayawada',
+    doctorId: 'doc-1',
+    doctorName: 'Dr. S. Anitha',
+    doctorSpecialization: 'General Medicine',
+    symptoms: 'Mild intermittent fever with productive dry cough since 4 days. Fatigue and mild throat congestion.',
+    vitals: {
+      bp: '118/76',
+      pulse: 74,
+      temp: 99.4,
+      spO2: 98,
+      bloodSugar: 92
+    },
+    status: 'COMPLETED',
+    prescription: {
+      diagnosis: 'Acute Upper Respiratory Tract Infection (Viral Pharyngitis)',
+      medicines: [
+        { name: 'Paracetamol IP 500mg (Jan Aushadhi)', dosage: '1 tablet 3 times a day after food', duration: '3 days' },
+        { name: 'Cetirizine Hydrochloride 10mg', dosage: '1 tablet at bedtime', duration: '5 days' },
+        { name: 'Warm Saline Gargles & Steam Inhalation', dosage: 'Twice daily', duration: '5 days' }
+      ],
+      advice: 'Maintain adequate oral hydration. If fever spikes above 101°F or shortness of breath develops, visit Casualty emergency immediately.'
+    },
+    scheduledTime: '10:30 AM',
+    createdAt: '2026-03-01T10:30:00Z'
+  },
+  {
+    id: 'tc-2',
+    teleconsultId: 'TC-2026-9044',
+    patientName: 'Venkata Raman',
+    patientPhone: '9848022115',
+    patientAge: 58,
+    patientGender: 'Male',
+    assistedByAsha: true,
+    ashaWorkerName: 'B. Padmavathi (ASHA, Gannavaram)',
+    ashaWorkerPhone: '9440188995',
+    hospitalId: 'hosp-2',
+    hospitalName: 'Community Health Centre (CHC), Gannavaram',
+    doctorId: 'doc-4',
+    doctorName: 'Dr. Ramesh Babu',
+    doctorSpecialization: 'General Medicine',
+    symptoms: 'Monthly chronic hypertension follow-up. Mild morning headache, no chest discomfort.',
+    vitals: {
+      bp: '138/88',
+      pulse: 76,
+      temp: 98.2,
+      spO2: 97,
+      bloodSugar: 124
+    },
+    status: 'WAITING',
+    scheduledTime: '11:15 AM',
+    createdAt: '2026-03-02T11:15:00Z'
+  }
+];
+
+export const INITIAL_HEALTH_RECORDS: HealthRecord[] = [
+  {
+    id: 'rec-1',
+    userId: 'user-google-salma',
+    abhaNumber: '91-2026-8812-4029',
+    abhaAddress: 'salma@abdm',
+    recordType: 'PRESCRIPTION',
+    title: 'GGH Outpatient Teleconsultation e-Prescription',
+    facilityName: 'Government General Hospital (GGH), Vijayawada',
+    doctorName: 'Dr. S. Anitha (MBBS, MD General Medicine)',
+    date: '2026-03-01',
+    summary: 'Diagnosis: Acute Upper Respiratory Tract Infection. Paracetamol 500mg, Cetirizine 10mg prescribed. Vitals: SpO2 98%, BP 118/76.',
+    details: {
+      diagnosis: 'Acute Viral Pharyngitis',
+      prescribedDrugs: ['Paracetamol 500mg', 'Cetirizine 10mg'],
+      vitalsLogged: { bp: '118/76', pulse: 74, spo2: 98, temp: 99.4 }
+    }
+  },
+  {
+    id: 'rec-2',
+    userId: 'user-google-salma',
+    abhaNumber: '91-2026-8812-4029',
+    abhaAddress: 'salma@abdm',
+    recordType: 'DIAGNOSTIC_REPORT',
+    title: 'Complete Blood Picture (CBC) & Platelet Count',
+    facilityName: 'Government General Hospital Central Pathology Lab',
+    doctorName: 'Dr. K. Radhika (Pathologist)',
+    date: '2026-02-14',
+    summary: 'Hemoglobin: 12.6 g/dL (Normal). WBC: 6,800 /uL. Platelets: 2.4 Lakhs/uL. Erythrocyte Sedimentation Rate: 12 mm/hr.',
+    details: {
+      hb: '12.6 g/dL',
+      wbc: '6,800 /uL',
+      platelets: '2,40,000 /uL',
+      esr: '12 mm/hr',
+      status: 'Within Normal Biological Reference Interval'
+    }
+  },
+  {
+    id: 'rec-3',
+    userId: 'user-google-salma',
+    abhaNumber: '91-2026-8812-4029',
+    abhaAddress: 'salma@abdm',
+    recordType: 'IMMUNIZATION',
+    title: 'Adult Tetanus Toxoid (TT) Booster Vaccine Certificate',
+    facilityName: 'Primary Health Centre (PHC), Vuyyuru Rural',
+    doctorName: 'Staff Nurse M. Anuradha',
+    date: '2025-11-20',
+    summary: 'Administered 0.5ml TT Intramuscular injection, Batch #TT-2025-091. Zero adverse reaction noted.',
+    details: {
+      vaccine: 'Tetanus Toxoid Adsorbed',
+      batch: 'TT-2025-091',
+      dose: '0.5 ml IM'
+    }
+  },
+  {
+    id: 'rec-4',
+    userId: 'user-citizen-1',
+    abhaNumber: '91-1988-4421-9901',
+    abhaAddress: 'rajesh.verma@abdm',
+    recordType: 'PRESCRIPTION',
+    title: 'Cardiology OPD Follow-up & ECG Review',
+    facilityName: 'Government General Hospital (GGH), Vijayawada',
+    doctorName: 'Dr. P. Srinivas (Cardiologist)',
+    date: '2026-01-25',
+    summary: 'Hypertension grade-1 under control. Normal sinus rhythm on 12-lead ECG. Continued Telmisartan 40mg once daily.',
+    details: {
+      diagnosis: 'Essential Systemic Hypertension',
+      drugs: ['Telmisartan 40mg once daily in morning']
+    }
+  }
+];
+
+export const INITIAL_REFERRALS: PatientReferral[] = [
+  {
+    id: 'ref-1',
+    referralId: 'REF-2026-NTR-0842',
+    patientId: 'user-google-salma',
+    patientName: 'Shaik Salma',
+    patientAge: 28,
+    patientGender: 'Female',
+    patientPhone: '9849112501',
+    patientEmail: 'shaiksalma1125@gmail.com',
+    fromHospitalId: 'hosp-3',
+    fromHospitalName: 'Primary Health Centre (PHC), Vuyyuru Rural',
+    toHospitalId: 'hosp-1',
+    toHospitalName: 'Government General Hospital (GGH), Vijayawada',
+    department: 'Cardiology & Intensive Coronary Care Unit',
+    referredByDoctor: 'Dr. M. Sunitha (Senior MO)',
+    doctorSpecialist: 'Dr. K. Srinivas Rao (Interventional Cardiologist)',
+    reason: 'Exertional angina with ST segment depression in Lead II, III, aVF. Requires urgent 2D Echo and invasive evaluation.',
+    referralReason: 'Exertional angina with ST segment depression in Lead II, III, aVF. Requires urgent 2D Echo and invasive evaluation.',
+    clinicalSummary: 'ECG demonstrates sinus tachycardia with non-specific ST-T wave changes in lead II, III. Troponin-T negative. Immediate specialist consultation recommended.',
+    priority: 'URGENT',
+    transportRequired: 'GOVT_PATIENT_VAN',
+    transportMode: 'GOVT_PATIENT_VAN',
+    status: 'In Progress',
+    referralDate: '2026-03-02',
+    qrCodeToken: 'REF-NTR-0842-SECURE-AUTH'
+  },
+  {
+    id: 'ref-1b',
+    referralId: 'REF-2026-NTR-1105',
+    patientId: 'user-google-salma',
+    patientName: 'Shaik Salma',
+    patientAge: 28,
+    patientGender: 'Female',
+    patientPhone: '9849112501',
+    patientEmail: 'shaiksalma1125@gmail.com',
+    fromHospitalId: 'hosp-2',
+    fromHospitalName: 'Community Health Centre (CHC), Gannavaram',
+    toHospitalId: 'hosp-1',
+    toHospitalName: 'Government General Hospital (GGH), Vijayawada',
+    department: 'Neurology & Specialized Stroke Unit',
+    referredByDoctor: 'Dr. Ramesh Babu (CHC Medical Officer)',
+    doctorSpecialist: 'Dr. N. Hemalatha (Consultant Neurologist)',
+    reason: 'Persistent atypical migraine with hemiplegic aura. Contrast MRI brain and specialist consultation advised.',
+    referralReason: 'Persistent atypical migraine with hemiplegic aura. Contrast MRI brain and specialist consultation advised.',
+    clinicalSummary: 'Recurrent severe unilateral headaches with visual scintillating scotoma and transient focal numbness. Normal CT scan. Referral for advanced 3T MRI & neurology workup.',
+    priority: 'ROUTINE',
+    transportRequired: 'SELF_TRANSPORT',
+    transportMode: 'SELF_TRANSPORT',
+    status: 'Accepted',
+    referralDate: '2026-03-05',
+    qrCodeToken: 'REF-NTR-1105-SECURE-AUTH'
+  },
+  {
+    id: 'ref-2',
+    referralId: 'REF-2026-KRI-0914',
+    patientId: 'user-citizen-1',
+    patientName: 'Rajesh Kumar Verma',
+    patientAge: 42,
+    patientGender: 'Male',
+    patientPhone: '9848022334',
+    patientEmail: 'citizen@healthcare.gov.in',
+    fromHospitalId: 'hosp-2',
+    fromHospitalName: 'Community Health Centre (CHC), Gannavaram',
+    toHospitalId: 'hosp-1',
+    toHospitalName: 'Government General Hospital (GGH), Vijayawada',
+    department: 'Orthopedics & Complex Trauma',
+    referredByDoctor: 'Dr. Ramesh Babu (CHC Medical Officer)',
+    doctorSpecialist: 'Dr. T. Subba Rao (Orthopedic Specialist)',
+    reason: 'Complicated meniscus tear right knee with joint effusion following agricultural fall; requires MRI and arthroscopic evaluation.',
+    referralReason: 'Complicated meniscus tear right knee with joint effusion following agricultural fall; requires MRI and arthroscopic evaluation.',
+    clinicalSummary: 'Significant knee joint effusion with restricted range of motion. Plain radiograph rules out bony fracture. Advanced MRI requested at tertiary center.',
+    priority: 'ROUTINE',
+    transportRequired: 'SELF_TRANSPORT',
+    transportMode: 'SELF_TRANSPORT',
+    status: 'Pending',
+    referralDate: '2026-03-03',
+    qrCodeToken: 'REF-KRI-0914-SECURE-AUTH'
+  },
+  {
+    id: 'ref-3',
+    referralId: 'REF-2026-GNT-1022',
+    patientId: 'usr-cit-venkanna',
+    patientName: 'B. Venkanna',
+    patientAge: 48,
+    patientGender: 'Male',
+    patientPhone: '9121884433',
+    fromHospitalId: 'hosp-4',
+    fromHospitalName: 'Government Area Hospital, Mangalagiri',
+    toHospitalId: 'hosp-5',
+    toHospitalName: 'District Headquarters Hospital, Guntur',
+    department: 'Orthopedics & Complex Trauma',
+    referredByDoctor: 'Dr. P. Satyanarayana (Civil Assistant Surgeon)',
+    doctorSpecialist: 'Dr. G. Rama Mohan (Consultant Orthopedic Surgeon)',
+    reason: 'Closed compound fracture right femur shaft following road collision. Requires open reduction internal fixation (ORIF).',
+    referralReason: 'Closed compound fracture right femur shaft following road collision. Requires open reduction internal fixation (ORIF).',
+    priority: 'EMERGENCY',
+    transportRequired: '108_AMBULANCE',
+    transportMode: '108_AMBULANCE',
+    status: 'Completed',
+    referralDate: '2026-03-01',
+    qrCodeToken: 'REF-GNT-1022-SECURE-AUTH'
+  },
+  {
+    id: 'ref-cit-a',
+    referralId: 'REF-2026-NTR-1402',
+    patientId: 'user-citizen-a',
+    patientName: 'Citizen A (Ananya Sharma)',
+    patientAge: 29,
+    patientGender: 'Female',
+    patientPhone: '9849221101',
+    patientEmail: 'citizena@healthcare.gov.in',
+    fromHospitalId: 'hosp-3',
+    fromHospitalName: 'Primary Health Centre (PHC), Vuyyuru Rural',
+    toHospitalId: 'hosp-1',
+    toHospitalName: 'Government General Hospital (GGH), Vijayawada',
+    department: 'Endocrinology & Diabetology',
+    referredByDoctor: 'Dr. Lalitha Devi (Medical Officer)',
+    doctorSpecialist: 'Dr. C. Madhava Rao (Consultant Endocrinologist)',
+    reason: 'Gestational diabetes with uncontrolled postprandial glycemic spikes. Specialized insulin titration required.',
+    referralReason: 'Gestational diabetes with uncontrolled postprandial glycemic spikes. Specialized insulin titration required.',
+    clinicalSummary: 'OGTT test shows fasting 132 mg/dL, 2-hr 210 mg/dL in 26th gestational week. Dietary intervention insufficient.',
+    priority: 'URGENT',
+    transportRequired: 'SELF_TRANSPORT',
+    transportMode: 'SELF_TRANSPORT',
+    status: 'In Progress',
+    referralDate: '2026-03-06',
+    qrCodeToken: 'REF-NTR-1402-SECURE-AUTH'
+  }
+];
+
+export const INITIAL_OPD_QUEUES: OPDQueueInfo[] = [
+  {
+    id: 'q-1',
+    hospitalId: 'hosp-1',
+    department: 'General Medicine OPD',
+    doctorName: 'Dr. S. Anitha (Room 104)',
+    currentServingToken: 'TK-14',
+    currentTokenNumber: 14,
+    totalTokensIssued: 45,
+    avgWaitTimePerPatientMinutes: 6,
+    status: 'CALLING',
+    roomNumber: 'Room 104 (Ground Floor)',
+    lastUpdated: '10:45 AM'
+  },
+  {
+    id: 'q-2',
+    hospitalId: 'hosp-1',
+    department: 'Cardiology OPD',
+    doctorName: 'Dr. P. Srinivas (Room 202)',
+    currentServingToken: 'TK-07',
+    currentTokenNumber: 7,
+    totalTokensIssued: 22,
+    avgWaitTimePerPatientMinutes: 8,
+    status: 'CONSULTING',
+    roomNumber: 'Room 202 (First Floor, Block B)',
+    lastUpdated: '10:48 AM'
+  },
+  {
+    id: 'q-3',
+    hospitalId: 'hosp-1',
+    department: 'Pediatrics & Neonatal Care',
+    doctorName: 'Dr. G. Madhavi (Room 110)',
+    currentServingToken: 'TK-18',
+    currentTokenNumber: 18,
+    totalTokensIssued: 38,
+    avgWaitTimePerPatientMinutes: 5,
+    status: 'CALLING',
+    roomNumber: 'Room 110 (Maternal & Child Wing)',
+    lastUpdated: '10:50 AM'
+  },
+  {
+    id: 'q-4',
+    hospitalId: 'hosp-2',
+    department: 'General OPD',
+    doctorName: 'Dr. Ramesh Babu (Room 1)',
+    currentServingToken: 'TK-09',
+    currentTokenNumber: 9,
+    totalTokensIssued: 28,
+    avgWaitTimePerPatientMinutes: 5,
+    status: 'CONSULTING',
+    roomNumber: 'Room 1 (Main Hall)',
+    lastUpdated: '10:42 AM'
+  },
+  {
+    id: 'q-5',
+    hospitalId: 'hosp-3',
+    department: 'Primary Health OPD',
+    doctorName: 'Dr. Lalitha Devi (Consultation Chamber)',
+    currentServingToken: 'TK-06',
+    currentTokenNumber: 6,
+    totalTokensIssued: 18,
+    avgWaitTimePerPatientMinutes: 5,
+    status: 'CALLING',
+    roomNumber: 'Doctor Chamber 1',
+    lastUpdated: '10:40 AM'
+  },
+  {
+    id: 'q-6',
+    hospitalId: 'hosp-4',
+    department: 'General & Emergency OPD',
+    doctorName: 'Dr. Sunita Rao (Room 3)',
+    currentServingToken: 'TK-12',
+    currentTokenNumber: 12,
+    totalTokensIssued: 32,
+    avgWaitTimePerPatientMinutes: 6,
+    status: 'CALLING',
+    roomNumber: 'Room 3 (Casualty OPD)',
+    lastUpdated: '10:46 AM'
+  }
+];
+
+export const INITIAL_HIGH_RISK_PATIENTS: HighRiskPatient[] = [
+  {
+    id: 'hr-1',
+    patientName: 'Lakshmi Devi',
+    age: 24,
+    gender: 'Female',
+    phone: '9849233441',
+    hospitalId: 'hosp-2',
+    hospitalName: 'Community Health Centre (CHC), Gannavaram',
+    village: 'Gannavaram Gram Panchayat',
+    conditionType: 'HIGH_RISK_PREGNANCY',
+    riskLevel: 'CRITICAL',
+    lastCheckupDate: '2026-02-20',
+    nextFollowUpDueDate: '2026-03-05',
+    ashaWorker: 'B. Padmavathi (ASHA)',
+    ashaPhone: '9440188995',
+    reminderSent: true,
+    reminderStatus: 'DELIVERED',
+    notes: 'Severe pre-eclampsia risk. BP 155/95 mmHg. Referred to GGH Vijayawada tertiary unit for continuous fetal monitoring.'
+  },
+  {
+    id: 'hr-2',
+    patientName: 'Venkata Raman',
+    age: 58,
+    gender: 'Male',
+    phone: '9848022115',
+    hospitalId: 'hosp-2',
+    hospitalName: 'Community Health Centre (CHC), Gannavaram',
+    village: 'Mustabad Village',
+    conditionType: 'SEVERE_HYPERTENSION',
+    riskLevel: 'HIGH',
+    lastCheckupDate: '2026-02-05',
+    nextFollowUpDueDate: '2026-03-04',
+    ashaWorker: 'B. Padmavathi (ASHA)',
+    ashaPhone: '9440188995',
+    reminderSent: true,
+    reminderStatus: 'SENT',
+    notes: 'Monthly Amlodipine 5mg and Metformin 500mg prescription refill due. Home BP monitored at 142/90.'
+  },
+  {
+    id: 'hr-3',
+    patientName: 'Baby Harika',
+    age: 1,
+    gender: 'Female',
+    phone: '9440122880',
+    hospitalId: 'hosp-1',
+    hospitalName: 'Government General Hospital (GGH), Vijayawada',
+    village: 'Ranigarithota, Vijayawada',
+    conditionType: 'INFANT_MALNUTRITION',
+    riskLevel: 'HIGH',
+    lastCheckupDate: '2026-02-24',
+    nextFollowUpDueDate: '2026-03-06',
+    ashaWorker: 'K. Mary (ASHA Worker)',
+    ashaPhone: '9440188771',
+    reminderSent: true,
+    reminderStatus: 'ACKNOWLEDGED',
+    notes: 'Nutrition Rehabilitation Center (NRC) therapeutic feeding round 2. Target weight recovery +600g.'
+  },
+  {
+    id: 'hr-4',
+    patientName: 'Ch. Subba Rao',
+    age: 64,
+    gender: 'Male',
+    phone: '9121998822',
+    hospitalId: 'hosp-3',
+    hospitalName: 'Primary Health Centre (PHC), Vuyyuru Rural',
+    village: 'Vuyyuru Rural Ward 3',
+    conditionType: 'UNCONTROLLED_DIABETES',
+    riskLevel: 'MODERATE',
+    lastCheckupDate: '2026-02-10',
+    nextFollowUpDueDate: '2026-03-10',
+    ashaWorker: 'T. Nagamani (ASHA)',
+    ashaPhone: '9440233110',
+    reminderSent: false,
+    reminderStatus: 'MISSED',
+    notes: 'Fasting glucose 210 mg/dL. Requires lifestyle dietary counseling and insulin dosage review.'
+  }
+];
+
+export const INITIAL_QUALITY_SCORES: FacilityQualityScore[] = [
+  {
+    hospitalId: 'hosp-1',
+    hospitalName: 'Government General Hospital (GGH), Vijayawada',
+    kayakalpScore: 94,
+    nqasCertified: true,
+    opdAvgWaitMins: 24,
+    medicineAvailabilityPercent: 96,
+    diagnosticUptimePercent: 98,
+    cleanlinessIndex: 4.6,
+    doctorPresenceIndex: 4.8,
+    citizenResolutionPercent: 92,
+    lastAuditDate: '2026-02-15'
+  },
+  {
+    hospitalId: 'hosp-2',
+    hospitalName: 'Community Health Centre (CHC), Gannavaram',
+    kayakalpScore: 89,
+    nqasCertified: true,
+    opdAvgWaitMins: 16,
+    medicineAvailabilityPercent: 92,
+    diagnosticUptimePercent: 94,
+    cleanlinessIndex: 4.3,
+    doctorPresenceIndex: 4.5,
+    citizenResolutionPercent: 88,
+    lastAuditDate: '2026-02-10'
+  },
+  {
+    hospitalId: 'hosp-3',
+    hospitalName: 'Primary Health Centre (PHC), Vuyyuru Rural',
+    kayakalpScore: 85,
+    nqasCertified: false,
+    opdAvgWaitMins: 11,
+    medicineAvailabilityPercent: 88,
+    diagnosticUptimePercent: 86,
+    cleanlinessIndex: 4.1,
+    doctorPresenceIndex: 4.2,
+    citizenResolutionPercent: 84,
+    lastAuditDate: '2026-01-28'
+  },
+  {
+    hospitalId: 'hosp-4',
+    hospitalName: 'Government Area Hospital, Mangalagiri',
+    kayakalpScore: 96,
+    nqasCertified: true,
+    opdAvgWaitMins: 19,
+    medicineAvailabilityPercent: 95,
+    diagnosticUptimePercent: 97,
+    cleanlinessIndex: 4.8,
+    doctorPresenceIndex: 4.7,
+    citizenResolutionPercent: 95,
+    lastAuditDate: '2026-02-20'
+  },
+  {
+    hospitalId: 'hosp-5',
+    hospitalName: 'District Headquarters Hospital, Guntur',
+    kayakalpScore: 91,
+    nqasCertified: true,
+    opdAvgWaitMins: 26,
+    medicineAvailabilityPercent: 93,
+    diagnosticUptimePercent: 95,
+    cleanlinessIndex: 4.4,
+    doctorPresenceIndex: 4.6,
+    citizenResolutionPercent: 90,
+    lastAuditDate: '2026-02-05'
+  }
+];
+
+export const INITIAL_EMERGENCIES: EmergencyIncident[] = [
+  {
+    id: 'emg-1',
+    callerName: 'Shaik Salma',
+    callerPhone: '9849112501',
+    location: {
+      lat: 16.5165,
+      lng: 80.6305,
+      address: 'Near Old Jail Road, Hanumanpet, Vijayawada'
+    },
+    emergencyType: 'CARDIAC_ARREST',
+    assignedAmbulanceId: 'AMB-108-NTR-04',
+    ambulanceVehicleNumber: 'AP 16 TX 1081 (Advanced Life Support)',
+    ambulanceDriverPhone: '+91 94401 10801',
+    etaMinutes: 6,
+    targetHospitalId: 'hosp-1',
+    targetHospitalName: 'Government General Hospital (GGH), Vijayawada',
+    traumaBedAlertDispatched: true,
+    status: 'EN_ROUTE',
+    createdAt: '2026-03-02T10:45:00Z'
   }
 ];

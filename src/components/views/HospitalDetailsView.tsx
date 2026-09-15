@@ -27,7 +27,10 @@ import {
   AlertTriangle,
   ChevronRight,
   ShieldCheck,
-  UserCheck
+  UserCheck,
+  Video,
+  TestTube,
+  Award
 } from 'lucide-react';
 
 interface HospitalDetailsViewProps {
@@ -68,6 +71,7 @@ export const HospitalDetailsView: React.FC<HospitalDetailsViewProps> = ({
   };
 
   const hospital = useMemo(() => apiStore.getHospitalById(hospitalId), [hospitalId]);
+  const singleHospitalList = useMemo(() => (hospital ? [hospital] : []), [hospital]);
   const doctors = useMemo(() => apiStore.getDoctors(hospitalId), [hospitalId]);
   const services = useMemo(() => apiStore.getServices(hospitalId), [hospitalId]);
   const medicines = useMemo(() => apiStore.getMedicines(hospitalId), [hospitalId]);
@@ -234,6 +238,56 @@ export const HospitalDetailsView: React.FC<HospitalDetailsViewProps> = ({
             ))}
           </div>
         </div>
+
+        {/* Connected Digital Health Quick Services */}
+        <div className="pt-2 border-t border-slate-100">
+          <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Connected Public Health Services</h4>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <button
+              onClick={() => onNavigate('queue', { hospitalId: hospital.id })}
+              className="p-2.5 rounded-xl bg-slate-50 hover:bg-blue-50 hover:text-blue-700 border border-slate-200 text-left transition-colors flex items-center gap-2 cursor-pointer"
+            >
+              <Clock className="w-4 h-4 text-blue-600 shrink-0" />
+              <div className="overflow-hidden">
+                <span className="block text-xs font-bold text-slate-800 truncate">OPD Live Queue</span>
+                <span className="block text-[10px] text-slate-500 truncate">Chamber token wait</span>
+              </div>
+            </button>
+
+            <button
+              onClick={() => onNavigate('teleconsultation', { hospitalId: hospital.id })}
+              className="p-2.5 rounded-xl bg-slate-50 hover:bg-blue-50 hover:text-blue-700 border border-slate-200 text-left transition-colors flex items-center gap-2 cursor-pointer"
+            >
+              <Video className="w-4 h-4 text-emerald-600 shrink-0" />
+              <div className="overflow-hidden">
+                <span className="block text-xs font-bold text-slate-800 truncate">Teleconsultation</span>
+                <span className="block text-[10px] text-slate-500 truncate">eSanjeevani Tele-OPD</span>
+              </div>
+            </button>
+
+            <button
+              onClick={() => onNavigate('diagnostics', { hospitalId: hospital.id })}
+              className="p-2.5 rounded-xl bg-slate-50 hover:bg-blue-50 hover:text-blue-700 border border-slate-200 text-left transition-colors flex items-center gap-2 cursor-pointer"
+            >
+              <TestTube className="w-4 h-4 text-indigo-600 shrink-0" />
+              <div className="overflow-hidden">
+                <span className="block text-xs font-bold text-slate-800 truncate">Diagnostic Labs</span>
+                <span className="block text-[10px] text-slate-500 truncate">Test slots & reports</span>
+              </div>
+            </button>
+
+            <button
+              onClick={() => onNavigate('quality-dashboard')}
+              className="p-2.5 rounded-xl bg-slate-50 hover:bg-blue-50 hover:text-blue-700 border border-slate-200 text-left transition-colors flex items-center gap-2 cursor-pointer"
+            >
+              <Award className="w-4 h-4 text-amber-600 shrink-0" />
+              <div className="overflow-hidden">
+                <span className="block text-xs font-bold text-slate-800 truncate">Quality Metrics</span>
+                <span className="block text-[10px] text-slate-500 truncate">Kayakalp score</span>
+              </div>
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Tabs Navigation */}
@@ -367,22 +421,39 @@ export const HospitalDetailsView: React.FC<HospitalDetailsViewProps> = ({
                     </div>
                   </div>
 
-                  <div className="pt-2 flex items-center justify-between border-t border-slate-100">
+                  <div className="pt-2 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100">
                     <button
                       onClick={() => onNavigate('doctor-details', { doctorId: doc.id })}
                       className="text-xs font-bold text-slate-600 hover:text-blue-600 transition-colors"
                     >
-                      View Doctor Details
+                      View Profile
                     </button>
-                    <button
-                      id={`book-with-doc-${doc.id}`}
-                      onClick={() =>
-                        onNavigate('appointment', { hospitalId: hospital.id, doctorId: doc.id })
-                      }
-                      className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-xs transition-colors"
-                    >
-                      Book Appointment
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => onNavigate('queue', { hospitalId: hospital.id, doctorId: doc.id })}
+                        className="px-2.5 py-1.5 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-100 text-[11px] font-semibold transition-colors"
+                        title="View Live Queue"
+                      >
+                        Queue
+                      </button>
+                      <button
+                        onClick={() => onNavigate('teleconsultation', { hospitalId: hospital.id, doctorId: doc.id })}
+                        className="px-2.5 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 text-[11px] font-semibold transition-colors flex items-center gap-1"
+                        title="Teleconsult with doctor"
+                      >
+                        <Video className="w-3 h-3" />
+                        <span>Teleconsult</span>
+                      </button>
+                      <button
+                        id={`book-with-doc-${doc.id}`}
+                        onClick={() =>
+                          onNavigate('appointment', { hospitalId: hospital.id, doctorId: doc.id })
+                        }
+                        className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-xs transition-colors"
+                      >
+                        Book OPD
+                      </button>
+                    </div>
                   </div>
                 </div>
               );
@@ -661,7 +732,7 @@ export const HospitalDetailsView: React.FC<HospitalDetailsViewProps> = ({
 
           <div id="hospital-map-section" className="rounded-2xl overflow-hidden shadow-xs border border-slate-200">
             <HospitalMap
-              hospitals={[hospital]}
+              hospitals={singleHospitalList}
               selectedHospitalId={hospital.id}
               userCoords={userCoords}
               routeDestinationHospital={showRoute ? hospital : null}
